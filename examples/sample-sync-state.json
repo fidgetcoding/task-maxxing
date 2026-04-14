@@ -1,0 +1,64 @@
+{
+  "_version": 1,
+  "_tagCache": {
+    "01 URGENT": "11111111-1111-1111-1111-111111111111",
+    "02 GENERAL": "22222222-2222-2222-2222-222222222222",
+    "03 LORECRAFT": "33333333-3333-3333-3333-333333333333"
+  },
+  "entries": {
+    "a1b2c3d4e5f67890abcdef01": {
+      "hash": "a1b2c3d4e5f67890abcdef01",
+      "sourceFile": "TASKS-URGENT.md",
+      "lineNo": 17,
+      "lineHash": "0123456789abcdef",
+      "text": "Ship the task-maxxing repo",
+      "area": "URGENT",
+      "priority": 2,
+      "due": "2026-04-15",
+      "scheduled": null,
+      "notionPageId": "11111111-2222-3333-4444-555555555555",
+      "morgenTaskId": "tsk_0000000000000000000001",
+      "morgenEventId": null,
+      "createdAt": "2026-04-14T15:10:00.000Z",
+      "updatedAt": "2026-04-14T15:10:00.000Z",
+      "lastSyncedAt": "2026-04-14T15:10:00.000Z",
+      "archived": false
+    },
+    "b2c3d4e5f67890abcdef0102": {
+      "hash": "b2c3d4e5f67890abcdef0102",
+      "sourceFile": "TASKS-GENERAL.md",
+      "lineNo": 4,
+      "lineHash": "fedcba9876543210",
+      "text": "Buy dish soap",
+      "area": "GENERAL",
+      "priority": 0,
+      "due": null,
+      "scheduled": "2026-04-20",
+      "notionPageId": "22222222-3333-4444-5555-666666666666",
+      "morgenTaskId": "tsk_0000000000000000000002",
+      "morgenEventId": null,
+      "createdAt": "2026-04-14T15:11:00.000Z",
+      "updatedAt": "2026-04-14T15:11:00.000Z",
+      "lastSyncedAt": "2026-04-14T15:11:00.000Z",
+      "archived": false
+    },
+    "c3d4e5f67890abcdef010203": {
+      "hash": "c3d4e5f67890abcdef010203",
+      "sourceFile": "TASKS-LORECRAFT.md",
+      "lineNo": 9,
+      "lineHash": "deadbeef12345678",
+      "text": "Update the README with the new install flow",
+      "area": "LORECRAFT",
+      "priority": 5,
+      "due": "2026-04-18",
+      "scheduled": "2026-04-16",
+      "notionPageId": "33333333-4444-5555-6666-777777777777",
+      "morgenTaskId": "tsk_0000000000000000000003",
+      "morgenEventId": null,
+      "createdAt": "2026-04-14T15:12:00.000Z",
+      "updatedAt": "2026-04-14T15:12:00.000Z",
+      "lastSyncedAt": "2026-04-14T15:12:00.000Z",
+      "archived": false
+    }
+  }
+}
