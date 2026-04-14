@@ -1,0 +1,38 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-workflows:
+    name: validate-workflows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate n8n workflow JSONs
+        run: node scripts/validate-workflows.js
+
+      - name: Hardcoded token grep (defense-in-depth)
+        run: |
+          set -e
+          # Scan the workflow JSONs for any hardcoded secret shapes.
+          # Only scans workflows/*.json — does NOT scan .github/workflows.
+          if ! ls workflows/*.json >/dev/null 2>&1; then
+            echo "No workflow JSONs to scan yet — skipping"
+            exit 0
+          fi
+          if grep -RnE '(ghp_[A-Za-z0-9]{20,}|ntn_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|ApiKey [A-Za-z0-9]{10,})' workflows/*.json; then
+            echo "::error::Hardcoded token detected in workflows/*.json"
+            exit 1
+          fi
+          echo "No hardcoded tokens found"

@@ -1,0 +1,76 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Show environment
+        run: |
+          node --version
+          npm --version
+
+      - name: Run sync e2e tests (mock mode)
+        env:
+          MOCK_MODE: '1'
+          NODE_ENV: test
+        run: |
+          if [ -f scripts/sync-e2e-tests.js ]; then
+            npm test
+          else
+            echo "::warning::scripts/sync-e2e-tests.js not present yet — skipping (Agent 12 ships this)"
+          fi
+
+      - name: Run sync-helpers unit tests
+        run: |
+          if [ -f scripts/test-helpers.js ] && [ -f src/sync-helpers.js ]; then
+            npm run test:helpers
+          else
+            echo "::warning::test-helpers.js or src/sync-helpers.js not present yet — skipping"
+          fi
+
+      - name: Validate sample sync state
+        run: |
+          if [ -f scripts/validate-sync-state.js ] && [ -f examples/sample-sync-state.json ]; then
+            node scripts/validate-sync-state.js examples/sample-sync-state.json
+          else
+            echo "::warning::validate-sync-state.js or examples/sample-sync-state.json not present yet — skipping"
+          fi
+
+      - name: Markdown lint — task files
+        run: |
+          set -e
+          fail=0
+          # Every TASKS-*.md example should contain the Tasks plugin query block header
+          shopt -s nullglob
+          files=(examples/*TASKS*.md examples/TASKS-*.md)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No example task files yet — skipping markdown lint"
+            exit 0
+          fi
+          for f in "${files[@]}"; do
+            echo "Linting $f"
+            if ! grep -q '^- \[ \]' "$f" && ! grep -q '^- \[x\]' "$f"; then
+              echo "::error file=$f::No task checkboxes found in $f"
+              fail=1
+            fi
+            if grep -qE '(ghp_[A-Za-z0-9]{20,}|ntn_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|ApiKey [A-Za-z0-9]{10,})' "$f"; then
+              echo "::error file=$f::Possible hardcoded token detected in $f"
+              fail=1
+            fi
+          done
+          exit $fail

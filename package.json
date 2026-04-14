@@ -1,15 +1,19 @@
 {
   "name": "task-maxxing",
   "version": "0.1.0",
-  "private": false,
-  "description": "Perfect task sync between Obsidian, Notion, and Morgen — DIY kit",
+  "private": true,
+  "description": "Perfect task sync between Obsidian, Notion, and Morgen",
   "license": "MIT",
   "author": "Nate Davidovich / lorecraft-io",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/lorecraft-io/task-maxxing.git"
+  "repository": "github:lorecraft-io/task-maxxing",
+  "engines": {
+    "node": ">=20"
   },
   "scripts": {
-    "test": "echo \"Agent 13 will fill in CI scripts\" && exit 0"
+    "test": "node scripts/sync-e2e-tests.js",
+    "test:helpers": "node scripts/test-helpers.js",
+    "validate:state": "node scripts/validate-sync-state.js",
+    "validate:workflows": "node scripts/validate-workflows.js",
+    "lint": "echo 'No linter configured yet'"
   }
 }
