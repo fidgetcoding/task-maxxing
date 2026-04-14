@@ -1,0 +1,15 @@
+{
+  "name": "task-maxxing",
+  "version": "0.1.0",
+  "private": false,
+  "description": "Perfect task sync between Obsidian, Notion, and Morgen — DIY kit",
+  "license": "MIT",
+  "author": "Nate Davidovich / lorecraft-io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lorecraft-io/task-maxxing.git"
+  },
+  "scripts": {
+    "test": "echo \"Agent 13 will fill in CI scripts\" && exit 0"
+  }
+}
