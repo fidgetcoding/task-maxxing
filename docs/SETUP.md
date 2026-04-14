@@ -212,7 +212,7 @@ Leave it open — you'll come back to it several times.
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer $(grep MORGEN_API_KEY .env | cut -d= -f2)" \
+  -H "Authorization: ApiKey $(grep MORGEN_API_KEY .env | cut -d= -f2)" \
   https://api.morgen.so/v3/tasks/list \
   | head -50
 ```
