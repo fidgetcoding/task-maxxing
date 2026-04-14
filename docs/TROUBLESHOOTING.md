@@ -327,7 +327,7 @@ Force a fresh tag lookup:
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer ${MORGEN_API_KEY}" \
+  -H "Authorization: ApiKey ${MORGEN_API_KEY}" \
   https://api.morgen.so/v3/tags/list
 ```
 
@@ -346,7 +346,7 @@ jq '.tasks[] | .morgenTaskId + " " + (.tags | join(","))' sync-state.json | head
 
    ```bash
    curl -X DELETE \
-     -H "Authorization: Bearer ${MORGEN_API_KEY}" \
+     -H "Authorization: ApiKey ${MORGEN_API_KEY}" \
      https://api.morgen.so/v3/tags/{{ORPHAN_TAG_ID}}
    ```
 
