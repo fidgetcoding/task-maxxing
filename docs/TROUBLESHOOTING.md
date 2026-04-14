@@ -52,25 +52,30 @@ accepts `.app` bundles in the FDA list.
 **Diagnostic**
 
 ```bash
-tail -30 ~/Library/Logs/task-maxxing-daemon.log
-ls -la ~/Applications/task-maxxing-daemon.app
+tail -30 ~/Library/Logs/task-maxxing.log
+ls -la "$HOME/Library/Application Support/task-maxxing/TaskMaxxingDaemon.app"
 ```
 
 If the `.app` bundle doesn't exist, the installer didn't run. Re-run
-`./src/install.sh`.
+`bash daemon/install-daemon.sh` with `BUNDLE_ID`, `WATCH_PATH`, and `SCRIPT_PATH`
+set (see `daemon/README.md`).
 
-If the `.app` bundle exists but the log shows EPERM, FDA is not granted.
+If the `.app` bundle exists but the log shows the `FATAL: cannot read …/.git/HEAD
+— macOS Full Disk Access likely not granted` line, FDA isn't granted to that
+specific bundle.
 
 **Fix**
 
 1. Open **System Settings → Privacy & Security → Full Disk Access**.
-2. Click **+**, navigate to `~/Applications/task-maxxing-daemon.app`, select it.
+2. Click **+**, press **Cmd+Shift+G**, paste
+   `~/Library/Application Support/task-maxxing/TaskMaxxingDaemon.app`, select it.
 3. Make sure the toggle is **ON**.
-4. Unload and reload the daemon:
+4. Reload the LaunchAgent so launchctl picks up the new permission:
 
    ```bash
-   launchctl unload ~/Library/LaunchAgents/io.{{YOUR_ORG_OR_NAME}}.task-maxxing-daemon.plist
-   launchctl load   ~/Library/LaunchAgents/io.{{YOUR_ORG_OR_NAME}}.task-maxxing-daemon.plist
+   BUNDLE_ID=io.example.task-maxxing-daemon   # whatever you used at install time
+   launchctl bootout  "gui/$(id -u)/${BUNDLE_ID}"
+   launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${BUNDLE_ID}.plist"
    ```
 
 5. Verify:
@@ -118,14 +123,24 @@ Look at the n8n execution log for W1. Count the number of Morgen ops. If you're 
 If you're in the middle of a backfill:
 
 1. Wait 15 minutes for the Morgen rate window to reset.
-2. Re-run `scripts/morgen-backfill.js` with a `--resume` flag. The script reads
-   `.sync-state.json` and only processes tasks without a `morgenTaskId`:
+2. Re-run `scripts/morgen-backfill.js`. The script is idempotent: it reads the
+   existing `.sync-state.json` from `VAULT_PATH` and automatically skips any task
+   whose hash is already mapped to a `morgenTaskId`. No flag needed — resume is the
+   default behavior:
 
    ```bash
-   node scripts/morgen-backfill.js --resume
+   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+     node scripts/morgen-backfill.js
    ```
 
-3. Repeat until all tasks have an ID.
+3. If you still have more tasks than the Morgen budget allows per window, cap the
+   batch explicitly with `--max-points` (default 85 of 100) and rerun each window
+   until all tasks have an ID:
+
+   ```bash
+   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+     node scripts/morgen-backfill.js --max-points 50
+   ```
 
 If you're in steady-state (not a backfill) and still hitting 429, your vault is
 pushing too many edits at once. Options:
@@ -144,7 +159,7 @@ pushing too many edits at once. Options:
 ```
 Notion API: 403 Forbidden
 Body: {"object":"error","status":403,"code":"object_not_found",
-       "message":"Could not find database with ID: {{NOTION_DB_ID}}.
+       "message":"Could not find database with ID: {{NOTION_DATABASE_ID}}.
                   Make sure the relevant pages and databases are shared with your integration."}
 ```
 
@@ -180,11 +195,11 @@ The URL of the Notion database page is:
 https://www.notion.so/{{WORKSPACE}}/{{PAGE_TITLE}}-{{32_HEX_CHARS}}?v={{VIEW_ID}}
 ```
 
-Make sure `NOTION_DB_ID` in `.env` matches the 32 hex chars in the URL, **not** the
-view ID.
+Make sure `NOTION_DATABASE_ID` in `.env` matches the 32 hex chars in the URL,
+**not** the view ID.
 
 ```bash
-grep NOTION_DB_ID .env
+grep NOTION_DATABASE_ID .env
 ```
 
 Normalize: strip dashes if any. task-maxxing accepts both forms but the Notion API is
@@ -224,11 +239,19 @@ rate limit, you can go from 3 req/s to 5 req/s):
 3. Change `notionRateLimit` from `3` to `5`.
 4. Save.
 
-**Option 2: run a backfill manually** and let W1 handle only the delta:
+**Option 2: shrink the diff W1 sees.** W1 only processes tasks whose hash doesn't
+match `.sync-state.json`'s `lastSyncedHash`. Run the Morgen backfill, commit the
+updated `.sync-state.json`, and the next W1 push will see a smaller delta because
+Morgen IDs are already mapped:
 
 ```bash
-node scripts/morgen-backfill.js --notion-only --resume
+VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+  node scripts/morgen-backfill.js
+# …then commit .sync-state.json and push so n8n W1 sees the update.
 ```
+
+(There is no `--notion-only` flag — Notion writes are owned by W1, not the
+backfill script.)
 
 **Option 3: increase workflow timeout**
 
@@ -268,38 +291,57 @@ If `jq` errors out, the file is invalid.
 
 **Fix**
 
-task-maxxing is idempotent on `.sync-state.json`. The recovery is always:
+task-maxxing treats markdown as canonical, so the recovery path is always:
+rebuild `.sync-state.json` from the current markdown, then repair the Notion and
+Morgen sides manually.
 
-1. **Delete** the file from the mirror repo.
+1. **Delete the corrupted `.sync-state.json` from your vault.** It lives in the
+   `VAULT_PATH` directory (alongside `TASKS-*.md`), with the leading-dot name:
 
    ```bash
-   cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
-   rm sync-state.json
-   git add -A
-   git commit -m "[bot:recovery] reset sync state"
+   rm "$VAULT_PATH/.sync-state.json"
+   ```
+
+2. **Re-run the Morgen backfill.** It will walk every task file, compute fresh
+   hashes, skip the already-archived Morgen tasks whose IDs were in the old state,
+   and write a brand-new `.sync-state.json`:
+
+   ```bash
+   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+     node scripts/morgen-backfill.js --dry-run   # preview
+   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+     node scripts/morgen-backfill.js             # live
+   ```
+
+3. **Clean up orphan Morgen tasks manually.** Because the old `morgenTaskId`
+   mappings are gone, the rebuilt run will create new Morgen tasks — any
+   previously-created tasks from before the corruption become orphans. Filter
+   Morgen's UI to "task-maxxing" tagged tasks and delete the duplicates, or skip
+   this step if the backfill only had to re-seed a handful of tasks.
+
+4. **Commit the restored state:**
+
+   ```bash
+   cd "$VAULT_PATH"
+   git add .sync-state.json
+   git commit -m "[bot:backfill] rebuild .sync-state.json after corruption"
    git push
    ```
 
-2. **Re-run the backfill.** With the existing IDs in Notion and Morgen already stored
-   in Notion's `Hash` column and Morgen's `integrationId`, the backfill script will
-   *re-associate* existing rows rather than creating new ones:
+5. W1 will see the next push, reconcile its local state, and W2/W3 will rebuild
+   their reverse indexes on the next cron tick.
 
-   ```bash
-   cd ~/Desktop/task-maxxing
-   node scripts/morgen-backfill.js --rehydrate
-   ```
+If the markdown parser shows different task counts than you expect, run the
+parser directly to debug:
 
-3. The `--rehydrate` flag tells the script to:
-   - Fetch all Notion rows with the task-maxxing `Hash` property set.
-   - Fetch all Morgen tasks with our `integrationId`.
-   - Match them to your markdown tasks by hash.
-   - Rebuild `.sync-state.json` with the correct IDs.
-
-4. Push the restored state to the mirror.
-
-If `--rehydrate` can't match a row (because you manually edited the task text after
-the hash was computed), you'll get duplicates. The backfill will print a list of
-"unmatched" tasks so you can delete the stale Notion rows by hand.
+```bash
+node -e '
+  const h = require("./src/sync-helpers");
+  const fs = require("fs");
+  const md = fs.readFileSync(process.argv[1], "utf8");
+  console.log(h.parseObsidianTasks(md, process.argv[1]).length, "tasks");
+' "$VAULT_PATH/TASKS-URGENT.md"
+```
 
 ---
 
@@ -357,11 +399,25 @@ jq '.tasks[] | .morgenTaskId + " " + (.tags | join(","))' sync-state.json | head
 In the Morgen sidebar, click the filter dropdown. Pick **All tasks** or
 **My integrations**. The tasks should now be visible.
 
-**Scenario C: integrationId filter mismatch**
+**Scenario C: orphan tags**
 
-If you changed `MORGEN_INTEGRATION_ID` in `.env` after running the backfill, the
-old tasks are tagged with the old ID and W2 won't round-trip them. Fix: re-run
-backfill with `--force-integration-id` to update all tasks.
+If the tag cache in `.sync-state.json` points at tag IDs that no longer exist in
+Morgen (you deleted a tag manually, or the Morgen workspace was rotated), new task
+writes will fail with a tag-resolution error. Clear the `_tagCache` object in
+`.sync-state.json` (replace with `{}`) and re-run the backfill — it will refetch
+`/v3/tags/list` and rebuild the cache from live data:
+
+```bash
+node -e '
+  const fs = require("fs");
+  const p = process.argv[1];
+  const s = JSON.parse(fs.readFileSync(p, "utf8"));
+  s._tagCache = {};
+  fs.writeFileSync(p, JSON.stringify(s, null, 2));
+' "$VAULT_PATH/.sync-state.json"
+VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+  node scripts/morgen-backfill.js
+```
 
 ---
 
@@ -371,7 +427,7 @@ backfill with `--force-integration-id` to update all tasks.
 
 W1 is triggering every 60 seconds on its own, even though you haven't edited
 anything. n8n's executions page shows a new W1 run every cycle. The daemon log shows
-commits with `[bot:w2]` or `[bot:w3]` being committed, followed immediately by a new
+commits with `[bot:W2]` or `[bot:W3]` being committed, followed immediately by a new
 `[bot:daemon]` commit.
 
 **Cause**
@@ -391,12 +447,13 @@ The loop usually comes from one of:
 **Diagnostic**
 
 ```bash
-cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
+cd "$VAULT_PATH"
 git log --oneline -20
 ```
 
-Look for commits without `[bot:daemon]`, `[bot:w1]`, `[bot:w2]`, or `[bot:w3]`
-prefixes. Any unprefixed commit will cause W1 to assume it's a user edit.
+Look for commits without `[bot:daemon]`, `[bot:W1]`, `[bot:W2]`, `[bot:W3]`, or
+`[bot:backfill]` prefixes. Any unprefixed commit will cause W1 to assume it's a
+user edit. (The canonical list is `BOT_COMMIT_PREFIXES` in `src/sync-helpers.js`.)
 
 **Fix**
 
@@ -622,8 +679,10 @@ Three possibilities, in order of likelihood:
    got hash `abc` when W1 started, but `def` by the time it finished. W1 created the
    row with the old hash, then the next run created a new row with the new hash
    (because it couldn't find the old hash in state).
-2. **`.sync-state.json` got reset but Notion wasn't cleaned.** The backfill `--rehydrate`
-   mode couldn't match the old rows and created new ones.
+2. **`.sync-state.json` got reset but Notion wasn't cleaned.** The recovery
+   procedure in section 5 rebuilds Morgen IDs but doesn't know about the stale
+   Notion rows, so W1's first post-recovery run creates fresh rows alongside the
+   old ones.
 3. **Two different markdown lines with the same text but different sourceFile.**
    These are intentionally distinct tasks (per the hashing strategy) but look
    identical in Notion because the `Source` column is collapsed.
@@ -650,16 +709,17 @@ of them in the source markdown to differentiate.
 1. Stop the daemon temporarily:
 
    ```bash
-   launchctl unload ~/Library/LaunchAgents/io.{{YOUR_ORG_OR_NAME}}.task-maxxing-daemon.plist
+   BUNDLE_ID=io.example.task-maxxing-daemon   # whatever you used at install time
+   launchctl bootout "gui/$(id -u)/${BUNDLE_ID}"
    ```
 
 2. Delete the duplicate Notion rows by hand.
-3. Delete `sync-state.json` from the mirror.
-4. Re-run `node scripts/morgen-backfill.js --rehydrate`.
-5. Reload the daemon:
+3. Follow the recovery steps in section 5 of this file to rebuild
+   `.sync-state.json` against the current markdown + Morgen state.
+4. Reload the daemon:
 
    ```bash
-   launchctl load ~/Library/LaunchAgents/io.{{YOUR_ORG_OR_NAME}}.task-maxxing-daemon.plist
+   launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${BUNDLE_ID}.plist"
    ```
 
 ---

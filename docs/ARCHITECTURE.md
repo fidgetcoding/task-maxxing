@@ -75,13 +75,36 @@ updated by all of them. The schema is documented below.
 
 ### The daemon
 
-A small Node process running under launchd on your Mac. Its job is tiny:
+A small zero-dependency Node script (`src/auto-commit.js`) invoked by launchd on
+every markdown edit inside your vault's `08-Tasks/` directory. Its job is tiny and
+it runs as a **one-shot per tick** — no long-running file watcher, no chokidar:
 
-1. Watch `08-Tasks/**/*.md` with `chokidar` (1s debounce).
-2. Run `sync-helpers.js parseAll` to re-generate `.sync-state.json`.
-3. `git add && git commit && git push` with a bot commit message prefix.
+1. launchd fires the agent whenever a file under `WatchPaths` changes, subject to a
+   30-second `ThrottleInterval` plus a 5-minute `StartInterval` heartbeat so the
+   daemon runs at least once every five minutes even if nothing fires WatchPaths.
+2. The script does an FDA preflight — it tries to read `${VAULT}/.git/HEAD` and
+   exits with an explicit "grant Full Disk Access to the Node binary at X" error
+   if macOS TCC blocks the read.
+3. If the git working tree is clean, it exits 0 (no-op).
+4. Otherwise it runs `git add -A`, then `git commit -m "[bot:daemon] auto: task
+   edit <ISO-8601-UTC>"`, then `git push origin main`.
+5. Every outcome (clean tick, commit, push, error) is appended to
+   `~/Library/Logs/task-maxxing.log` plus a heartbeat file next to it.
 
-That's it. The daemon does not talk to Notion or Morgen. It only talks to git.
+The daemon does **not** parse markdown, talk to Notion, talk to Morgen, or
+regenerate `.sync-state.json`. It only talks to git. The state file is owned by
+`scripts/morgen-backfill.js` (initial seed), then by W1/W2/W3 (runtime updates) —
+the daemon's job is simply to pick up whichever file set changed in the working
+tree and push it.
+
+The `[bot:daemon]` commit prefix is load-bearing: W1's echo-loop guard reads
+`commits[].message` on the incoming push webhook and skips the Notion+Morgen write
+phase if every commit is prefixed with one of the `[bot:*]` labels in
+`BOT_COMMIT_PREFIXES` (W1/W2/W3/backfill/daemon). Without that prefix, every
+daemon push would round-trip back through W1 and loop forever. Do not change it.
+
+For the full installer walkthrough (building the `.app` wrapper, granting Full
+Disk Access, loading the LaunchAgent) see `daemon/README.md`.
 
 ---
 
@@ -109,7 +132,7 @@ That's it. The daemon does not talk to Notion or Morgen. It only talks to git.
      `DELETE /v3/tasks/:id`. Throttled to stay under 100 points / 15 min.
 6. On success, writes the updated `{notionPageId, morgenTaskId, morgenEtag, lastSyncedAt, lastSyncedHash}`
    fields back into `.sync-state.json` via a GitHub contents API commit (with a
-   `[bot:w1]` commit prefix so the daemon and W1 don't echo-loop).
+   `[bot:W1]` commit prefix so the daemon and W1 don't echo-loop).
 
 **Rate budget:** capped at 100 Notion ops + 100 Morgen ops per run. If you exceed the
 budget, W1 stops, logs a warning, and the next push picks up the remainder.
@@ -131,7 +154,7 @@ backfill (run the backfill script manually) or your Notion throttle is too low.
    - If the Morgen `updatedAt` > `.sync-state.json.lastSyncedAt` AND any of
      `dueDate`, `scheduledDate`, `priority`, `text` changed, propagate those to
      the markdown task.
-4. Writes a single commit to GitHub with all markdown edits, message `[bot:w2] morgen sync`.
+4. Writes a single commit to GitHub with all markdown edits, message `[bot:W2] morgen sync`.
 5. Updates `.sync-state.json` with new `lastSyncedAt` and `lastSyncedHash` for each
    edited task.
 
@@ -153,7 +176,7 @@ git. This also gives us free history.
    - `Priority` change → emoji swap (`highest` / `high` / `medium` / `low` / `lowest`).
    - `Due` change → `📅 YYYY-MM-DD`.
    - `Scheduled` change → `⏳ YYYY-MM-DD`.
-5. Commits all edits to the GitHub mirror with message `[bot:w3] notion sync`.
+5. Commits all edits to the GitHub mirror with message `[bot:W3] notion sync`.
 6. Updates `.sync-state.json`.
 
 ### Edge paths
@@ -208,27 +231,33 @@ was known to be stale — see [Conflict resolution](#conflict-resolution).
 ## Hashing strategy
 
 Every task gets a stable identity hash computed from its markdown-relevant fields.
+The canonical implementation is `computeTaskHash` in `src/sync-helpers.js`:
 
 ```javascript
-// src/sync-helpers.js
+// src/sync-helpers.js (excerpted)
 const crypto = require('crypto');
 
-function hashTask(task) {
-  const canonical = [
-    task.sourceFile,              // e.g. "08-Tasks/TASKS-URGENT.md"
-    task.text.trim(),             // the plain task text
-    task.priorityInt ?? 0,        // 5=highest, 4=high, 3=medium, 2=low, 1=lowest, 0=none
-    task.due ?? '',               // "YYYY-MM-DD" or ""
-    task.scheduled ?? '',         // "YYYY-MM-DD" or ""
-  ].join('::');
-
+function computeTaskHash(input) {
+  const i = input || {};
+  const parts = [
+    String(i.sourceFile || ''),                        // "TASKS-URGENT.md"
+    String(i.text || ''),                              // plain task text
+    String(parseInt(i.priority, 10) || 0),             // int: 1/2/5/7/9/0
+    (i.due == null ? '' : String(i.due)).slice(0, 10), // "YYYY-MM-DD" or ""
+    (i.scheduled == null ? '' : String(i.scheduled)).slice(0, 10),
+  ];
   return crypto
     .createHash('sha256')
-    .update(canonical)
+    .update(parts.join('::'))
     .digest('hex')
     .slice(0, 24);
 }
 ```
+
+**Priority is an integer, not a string.** The Obsidian Tasks plugin's emoji map to
+this integer ladder (from `PRIORITY_EMOJI_TO_INT`): 🔺=1 (highest), ⏫=2 (high),
+🔼=5 (medium), 🔽=7 (low), ⏬=9 (lowest), none=0. The Morgen and Notion sides
+reuse the same integer so the mapping is lossless across all three apps.
 
 **Why 24 hex chars?** 96 bits of collision resistance is fine for a single user's task
 backlog (N < 10k tasks indefinitely). It's also short enough to eyeball in logs and git
@@ -341,14 +370,14 @@ working copy and the mirror can be different).
    and pushes to git.
 2. **W1 runs:** sees a new hash not in n8n's last-known state, creates a Notion page
    and a Morgen task, writes the IDs back into `.sync-state.json`, commits with
-   `[bot:w1]` prefix.
+   `[bot:W1]` prefix.
 3. **Edit:** user changes the due date. Daemon parses and computes a new hash. It
    preserves old Notion/Morgen IDs by mapping via the `byNotionId`/`byMorgenId`
    indexes, writes a new entry, deletes the old one, and pushes.
 4. **W1 runs:** sees the new hash, but looks up Notion/Morgen IDs and issues an
    `update`, not a `create`.
 5. **Complete in Morgen:** W2 polls, sees `closed`, writes `- [x]` to markdown via the
-   GitHub API with the `[bot:w2]` prefix. Daemon receives the push, re-parses, updates
+   GitHub API with the `[bot:W2]` prefix. Daemon receives the push, re-parses, updates
    state.
 
 ---
@@ -422,16 +451,20 @@ Override: set `FORCE_SYNC=true` in the workflow env vars for one run.
 
 ### 3. Echo-loop guard
 
-Every git commit from a bot (W1, W2, W3, or the daemon) has a commit message prefix:
+Every git commit from a bot (W1, W2, W3, the backfill script, or the local daemon)
+has a commit message prefix drawn from `BOT_COMMIT_PREFIXES` in
+`src/sync-helpers.js`:
 
 - Daemon: `[bot:daemon]`
-- W1: `[bot:w1]`
-- W2: `[bot:w2]`
-- W3: `[bot:w3]`
+- W1: `[bot:W1]`
+- W2: `[bot:W2]`
+- W3: `[bot:W3]`
+- Morgen backfill: `[bot:backfill]`
 
 The W1 webhook handler checks `commits[].message` on the incoming push. If **every**
-commit in the push is prefixed with `[bot:*]`, W1 skips the Notion/Morgen write phase.
-It still reads `.sync-state.json` (in case it's been updated) but won't fire writes.
+commit in the push is prefixed with one of the labels above, W1 skips the
+Notion/Morgen write phase. It still reads `.sync-state.json` (in case it's been
+updated) but won't fire writes.
 This prevents the loop:
 
 ```

@@ -116,7 +116,7 @@ Notion + Morgen). Point at a dedicated test database and task list, not your mai
 ```bash
 # Set up a dedicated test env
 cp .env .env.test
-# Edit .env.test and point NOTION_DB_ID / MORGEN_INTEGRATION_ID at scratch resources
+# Edit .env.test and point NOTION_DATABASE_ID + MORGEN_API_KEY at scratch resources
 $EDITOR .env.test
 
 # Run the e2e suite
