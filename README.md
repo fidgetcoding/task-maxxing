@@ -11,6 +11,11 @@ scheduled blocks, completion state, and all.
 This repo is the reference implementation Nathan built for his own vault. It's packaged
 as a kit you can clone, re-point at your own accounts, and run in about two hours.
 
+> **Template vs. instance:** task-maxxing is the template. When you run through setup,
+> you'll create your own private `YOUR-VAULT-tasks` repo (step 8) — that's where your
+> live sync state, `.sync-state.json`, and workflow commits actually live. This repo stays
+> clean and reusable. Think of it like `create-react-app` vs your actual app.
+
 ---
 
 ## Why
