@@ -156,10 +156,16 @@ const main = () => {
   }
 
   // --- Commit --------------------------------------------------------------
-  // ISO-8601 UTC, matches `date -u +%Y-%m-%dT%H:%M:%SZ`
+  // ISO-8601 UTC, matches `date -u +%Y-%m-%dT%H:%M:%SZ`.
+  //
+  // Commit prefix `[bot:daemon]` is load-bearing: n8n W1's echo-loop guard
+  // (see sync-helpers.js BOT_COMMIT_PREFIXES + isBotCommitMessage) skips
+  // pushes whose every commit is prefixed with one of the `[bot:*]` labels.
+  // Changing this string will cause W1 to interpret every daemon push as a
+  // user edit and re-sync back into Notion/Morgen, looping forever. Don't.
   const utcStamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   try {
-    const msg = `auto: task edit ${utcStamp}`;
+    const msg = `[bot:daemon] auto: task edit ${utcStamp}`;
     execSync(`git -C "${REPO_PATH}" commit -m '${msg.replace(/'/g, "'\\''")}'`, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],

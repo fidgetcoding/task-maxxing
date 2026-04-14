@@ -48,6 +48,7 @@ missing, circle back before continuing — the rest of the guide assumes they're
 - [ ] **git** — check with `git --version`
 - [ ] **Homebrew** (optional but convenient — [brew.sh](https://brew.sh))
 - [ ] **gh** (GitHub CLI) — `brew install gh` if you don't have it
+- [ ] **jq** — required by `scripts/install-workflows.sh` to render workflow JSON
 
 **Quick check:**
 
@@ -55,12 +56,13 @@ missing, circle back before continuing — the rest of the guide assumes they're
 node --version   # should print v20.x or higher
 git --version    # should print 2.x
 gh --version     # should print gh version 2.x
+jq --version     # should print jq-1.7.x (or similar)
 ```
 
 If any of those are missing:
 
 ```bash
-brew install node git gh
+brew install node git gh jq
 ```
 
 ---
@@ -89,33 +91,41 @@ Open `.env` in your editor — you'll fill in values throughout this guide:
 $EDITOR .env
 ```
 
-The file looks like this (values redacted):
+The file is heavily commented — read the comments in the file directly. The
+canonical shape (matches `examples/sample-.env.example`) is:
 
 ```bash
+# Local vault — absolute path to the 08-Tasks directory inside your Obsidian
+# vault (NOT the vault root — point at the dir that holds TASKS-*.md).
+VAULT_PATH=/absolute/path/to/your-vault/08-Tasks
+TASK_MAXXING_REPO=/absolute/path/to/your-vault/08-Tasks   # usually same value
+
+# GitHub — split owner + repo name (easier for callers to concat than the
+# joined "owner/repo" form).
+GITHUB_REPO_OWNER={{YOUR_GH_USERNAME}}
+GITHUB_REPO_NAME={{YOUR_VAULT_NAME}}-tasks
+GITHUB_TOKEN=github_pat_{{YOUR_TOKEN}}
+
 # Notion
-NOTION_TOKEN=
-NOTION_DB_ID=
+NOTION_TOKEN=ntn_{{YOUR_NOTION_TOKEN}}
+NOTION_DATABASE_ID={{YOUR_NOTION_DB_ID}}    # with or without dashes
 
 # Morgen
-MORGEN_API_KEY=
-MORGEN_INTEGRATION_ID=task-maxxing
+MORGEN_API_KEY={{YOUR_MORGEN_KEY}}
+MORGEN_KEY=${MORGEN_API_KEY}                # alias read by install-workflows.sh
 
 # n8n
 N8N_BASE_URL=https://{{YOUR_SUBDOMAIN}}.app.n8n.cloud
-N8N_API_KEY=
-
-# GitHub (the tasks mirror)
-GITHUB_TOKEN=
-GITHUB_OWNER={{YOUR_GH_USERNAME}}
-GITHUB_REPO={{YOUR_TASKS_MIRROR_REPO_NAME}}
-GITHUB_BRANCH=main
-
-# Local vault
-VAULT_PATH={{ABSOLUTE_PATH_TO_VAULT}}
-TASKS_SUBDIR=08-Tasks
+N8N_API_KEY={{YOUR_N8N_API_KEY}}
 ```
 
-Leave it open — you'll come back to it several times.
+Leave the file open — you'll come back to it several times.
+
+> **Env-var naming (load-bearing):** the canonical names are `VAULT_PATH`,
+> `NOTION_DATABASE_ID`, `GITHUB_REPO_OWNER` + `GITHUB_REPO_NAME`, and
+> `MORGEN_API_KEY` (aliased as `MORGEN_KEY` for the installer). An older
+> joined `GITHUB_REPO="owner/repo"` is accepted by `install-workflows.sh` for
+> back-compat, but the split pair above is the recommended form.
 
 ---
 
@@ -128,11 +138,12 @@ Leave it open — you'll come back to it several times.
 4. Pick the workspace you want the Tasks database in.
 5. Click **Save**.
 6. On the next screen, scroll to **Internal Integration Secret** and click **Show**,
-   then **Copy**. This is your `NOTION_TOKEN`.
+   then **Copy**. This is your `NOTION_TOKEN`. Notion integration tokens now use
+   the `ntn_` prefix (the old `secret_` prefix was retired in late 2024).
 7. Paste it into `.env`:
 
    ```bash
-   NOTION_TOKEN=secret_{{YOUR_NOTION_TOKEN}}
+   NOTION_TOKEN=ntn_{{YOUR_NOTION_TOKEN}}
    ```
 
 8. Still in the integration config, go to **Capabilities**:
@@ -183,7 +194,7 @@ Leave it open — you'll come back to it several times.
    The 32-character hex string after `Tasks-` is your database ID. Paste it into `.env`:
 
    ```bash
-   NOTION_DB_ID={{32_CHAR_ID}}
+   NOTION_DATABASE_ID={{32_CHAR_ID}}
    ```
 
    *(Dashes are optional — task-maxxing normalizes them.)*
@@ -198,15 +209,13 @@ Leave it open — you'll come back to it several times.
 2. Sign in with your Morgen account.
 3. You should see a **Developer API** panel. If you don't have an API key yet, click
    **Create API key**. Give it a name like `task-maxxing`.
-4. Copy the key (it starts with `morgen_` typically). Paste into `.env`:
+4. Copy the key. Paste into `.env`:
 
    ```bash
-   MORGEN_API_KEY=morgen_{{YOUR_KEY}}
+   MORGEN_API_KEY={{YOUR_MORGEN_KEY}}
+   # MORGEN_KEY is an alias used by scripts/install-workflows.sh; the sample
+   # .env points it at ${MORGEN_API_KEY}, so you only set the value once.
    ```
-
-5. Leave `MORGEN_INTEGRATION_ID=task-maxxing` as the default. This is the string we'll
-   stamp onto every task task-maxxing creates, so W2 can filter out tasks from other
-   integrations.
 
 **Quick sanity check** — this should return your task list:
 
@@ -292,11 +301,11 @@ gh repo create {{YOUR_GH_USERNAME}}/{{YOUR_VAULT_NAME}}-tasks \
 
 **Expected output:** `https://github.com/{{YOUR_GH_USERNAME}}/{{YOUR_VAULT_NAME}}-tasks`.
 
-Paste the owner and repo into `.env`:
+Paste the owner and repo name into `.env`:
 
 ```bash
-GITHUB_OWNER={{YOUR_GH_USERNAME}}
-GITHUB_REPO={{YOUR_VAULT_NAME}}-tasks
+GITHUB_REPO_OWNER={{YOUR_GH_USERNAME}}
+GITHUB_REPO_NAME={{YOUR_VAULT_NAME}}-tasks
 ```
 
 ### Create a fine-grained PAT
@@ -342,42 +351,51 @@ Check in your browser: the repo should now have a `README.md` and one commit.
 
 ## 9. Set up the local daemon
 
-The daemon watches your vault's `08-Tasks/` folder, runs the parser, and pushes to the
-mirror. It runs under launchd on macOS so it auto-starts on login and restarts on
-crash.
+The daemon watches your vault's `08-Tasks/` folder via launchd's `WatchPaths`, then
+runs `src/auto-commit.js` once per fire (with a 30-second throttle and a 5-minute
+heartbeat). The script stages, commits, and pushes any changes to the tasks mirror.
+It's a one-shot script per tick — no long-running file watcher — and it has zero
+npm dependencies.
 
-**Fill in the remaining env vars first:**
+The installer lives at `daemon/install-daemon.sh`. It takes its configuration from
+three environment variables (not from `.env`):
+
+| Variable      | Purpose                                                                |
+|---------------|------------------------------------------------------------------------|
+| `BUNDLE_ID`   | Reverse-DNS label for the LaunchAgent (e.g. `io.example.task-maxxing-daemon`). |
+| `WATCH_PATH`  | Absolute path to the `08-Tasks/` dir inside your vault. This MUST be a git working tree (`git init` it if needed) and its `origin` remote must point at the mirror repo you created in step 8. |
+| `SCRIPT_PATH` | Absolute path to `src/auto-commit.js` in this clone of task-maxxing.   |
+
+See `daemon/README.md` for the full list (optional `NODE_BIN`, `APP_SUPPORT_DIR`,
+`LOG_DIR`).
+
+**Run the installer:**
 
 ```bash
 cd ~/Desktop/task-maxxing   # back into the cloned repo
 
-# Edit .env and set VAULT_PATH to your Obsidian vault's absolute path
-# Example: VAULT_PATH=/Users/{{YOUR_USERNAME}}/Desktop/WORK/OBSIDIAN/2ndBrain
-$EDITOR .env
-```
-
-Now run the installer. It's interactive — it'll confirm paths with you before writing
-anything.
-
-```bash
-./src/install.sh
+BUNDLE_ID=io.example.task-maxxing-daemon \
+WATCH_PATH="$HOME/path/to/your-vault/08-Tasks" \
+SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
+  bash daemon/install-daemon.sh
 ```
 
 **What it does:**
 
-1. Reads `.env` and validates that every variable is set.
-2. Prompts you to confirm the vault path (`VAULT_PATH`) and the tasks subdir (`TASKS_SUBDIR`).
-3. Builds a macOS `.app` bundle at `~/Applications/task-maxxing-daemon.app` wrapping
-   `src/auto-commit.js`.
+1. Copies your Node binary into a `.app` bundle at
+   `~/Library/Application Support/task-maxxing/TaskMaxxingDaemon.app/Contents/MacOS/TaskMaxxingDaemon`.
    (Why an `.app` bundle? macOS Full Disk Access only applies to `.app`-wrapped
    executables. A bare Node script can't be granted FDA.)
-4. Writes a launchd plist to
-   `~/Library/LaunchAgents/io.{{YOUR_ORG_OR_NAME}}.task-maxxing-daemon.plist` (based on
-   `daemon/io.example.task-maxxing-daemon.plist.template`).
-5. Prints a "next steps" message telling you to grant FDA (which is the next section).
+2. Writes an `Info.plist` alongside it describing the bundle.
+3. Renders `daemon/io.example.task-maxxing-daemon.plist.template` →
+   `~/Library/LaunchAgents/${BUNDLE_ID}.plist`, substituting `${BUNDLE_ID}`,
+   `${WATCH_PATH}`, `${SCRIPT_PATH}`, and the log paths.
+4. Lints the plist with `plutil`.
+5. Loads it with `launchctl bootstrap gui/$(id -u) …`.
+6. Prints the Full Disk Access walkthrough — see the next section.
 
-**Do not load the plist yet.** Grant FDA first, or the daemon will crash on its first
-file read.
+The agent will start firing immediately, but until you grant FDA (next section), it
+will log `FATAL: cannot read …/.git/HEAD` on every tick. That's expected.
 
 ---
 
@@ -398,16 +416,22 @@ Access. The `.app` bundle from step 9 exists specifically to make this grant pos
 1. Open **System Settings**.
 2. Go to **Privacy & Security** → **Full Disk Access**.
 3. Click the **+** button (you'll need to unlock with Touch ID or password).
-4. Navigate to `~/Applications/task-maxxing-daemon.app` and select it.
-5. Make sure the toggle next to it is **ON** (green).
+4. In the file picker press **Cmd+Shift+G** and paste the `.app` path the installer
+   printed (something like
+   `~/Library/Application Support/task-maxxing/TaskMaxxingDaemon.app`). Select it.
+5. Make sure the toggle next to the new entry is **ON** (green).
 
 > *Screenshot placeholder: `docs/images/macos-fda-grant.png`*
 
-**Now load the daemon:**
+**Reload the agent so launchctl picks up the new permission:**
 
 ```bash
-launchctl load ~/Library/LaunchAgents/io.{{YOUR_ORG_OR_NAME}}.task-maxxing-daemon.plist
+launchctl bootout  "gui/$(id -u)/${BUNDLE_ID}"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${BUNDLE_ID}.plist"
 ```
+
+(Substitute your real `BUNDLE_ID` — e.g. `io.example.task-maxxing-daemon` — if you
+don't still have it exported from the previous step.)
 
 **Check it's running:**
 
@@ -419,51 +443,86 @@ launchctl list | grep task-maxxing
 crashed). If you see `-` in the first column, check:
 
 ```bash
-tail -50 ~/Library/Logs/task-maxxing-daemon.log
+tail -50 ~/Library/Logs/task-maxxing.log
 ```
 
-If FDA is not granted, you'll see `EPERM` errors. Re-check step 10.1–10.5.
+If FDA is not granted, you'll see the explicit `FATAL: cannot read …/.git/HEAD …
+macOS Full Disk Access likely not granted` line from `src/auto-commit.js`, which
+tells you exactly which Node binary needs FDA. Re-check step 10.1–10.5.
 
 ---
 
 ## 11. Run the backfill script
 
 The first time you run task-maxxing, there are no task IDs anywhere. The backfill
-script walks your vault, parses every task, builds an initial `.sync-state.json`, and
-pushes it to the mirror.
+script walks your `VAULT_PATH`, parses every open task, creates a matching task in
+Morgen (one per unique hash), and writes an initial `.sync-state.json` into
+`VAULT_PATH` so the workflows can dedupe.
+
+The supported flags (run `node scripts/morgen-backfill.js --help` for the full
+list) are:
+
+| Flag                | Purpose                                                          |
+|---------------------|------------------------------------------------------------------|
+| `--dry-run`         | Print planned payloads + point cost. No API calls.               |
+| `--max-points <n>`  | Hard cap on the rate-limit budget (default `85` of Morgen's 100). |
+| `--vault <dir>`     | Override `VAULT_PATH` on the CLI.                                |
+| `--api-key <key>`   | Override `MORGEN_API_KEY` on the CLI.                            |
+| `--verbose`, `-v`   | Log every API call.                                              |
+
+The backfill only touches Morgen and `.sync-state.json`. Notion backfilling happens
+automatically on the first W1 run (from `08-Tasks/**/*.md` + the seeded state).
+
+**Preview first:**
 
 ```bash
 cd ~/Desktop/task-maxxing
-node scripts/morgen-backfill.js --dry-run
+VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+  node scripts/morgen-backfill.js --dry-run
 ```
 
-**Expected output:**
-
-```
-Parsing 08-Tasks/TASKS-URGENT.md...  12 tasks
-Parsing 08-Tasks/TASKS-LORECRAFT.md...  7 tasks
-...
-Total: 47 tasks parsed.
-Morgen backfill: would create 47 tasks.
-Notion backfill: would create 47 pages.
-sync-state.json: would write 47 entries.
-Dry run. No changes made.
-```
+**Expected output:** one section per area, sample payloads, point-cost projection,
+and a `dry run complete — no API calls were made` footer.
 
 If the numbers look right, drop `--dry-run` and run for real:
 
 ```bash
-node scripts/morgen-backfill.js
+VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+MORGEN_API_KEY=ntn_...replace... \
+  node scripts/morgen-backfill.js
 ```
 
 This will:
 
-1. Create a Morgen task for every task in your markdown (rate-limited).
-2. Create a Notion page for every task (rate-limited).
-3. Write the initial `.sync-state.json` to the mirror repo.
-4. Git-push the mirror.
+1. Fetch existing Morgen tags (`/v3/tags/list`) and cache them in state.
+2. Create any missing area tags (one tag per unique `TASKS-*.md` file).
+3. Create a Morgen task for every open markdown task (rate-limited under the
+   `--max-points` budget).
+4. Write `.sync-state.json` into `VAULT_PATH`. **The script does NOT commit.** Review
+   the diff and commit the file manually:
 
-**Expected runtime:** 30–90 seconds for a typical backlog of <100 tasks.
+   ```bash
+   cd "$VAULT_PATH"
+   git diff .sync-state.json
+   git add .sync-state.json
+   git commit -m "[bot:backfill] seed Morgen task IDs"
+   git push
+   ```
+
+**Expected runtime:** 30–90 seconds for a typical backlog of <80 tasks. The
+100 pts / 15 min ceiling is the upper bound — the default `--max-points 85` leaves
+headroom.
+
+**Budget abort?** If the projected cost exceeds `--max-points`, the script exits 2
+with a suggested batch size. Split the backfill into batches (wait 15 min between)
+and re-run.
+
+**Recovery — rerunning after an error:** the script is resume-safe. On every run it
+reads the existing `.sync-state.json` and skips any task whose hash is already
+present, so aborting mid-run and re-running later just picks up where you left off
+— no `--resume` flag needed. If a tag-create or task-create call fails, the script
+writes partial state to disk before exiting, so the next invocation picks up the
+remaining work automatically.
 
 > If you're on Morgen's free tier you'll hit 403s. That's the point at which you
 > upgrade to Pro — it's a one-time cost and doesn't recur per user.
@@ -472,51 +531,56 @@ This will:
 
 ## 12. Import the n8n workflows
 
-The `scripts/install-workflows.sh` script POSTs the three workflow JSON files to your
-n8n instance via the API, sets up the webhook URLs, and binds credentials.
+The `scripts/install-workflows.sh` script substitutes your tokens into each workflow
+JSON, strips the n8n-internal top-level fields via `jq`, and POSTs the result to
+`${N8N_BASE_URL}/api/v1/workflows`. It reads these env vars:
+
+- `GITHUB_TOKEN`, `NOTION_TOKEN`, `MORGEN_KEY`, `NOTION_DATABASE_ID`
+- `GITHUB_REPO_OWNER` + `GITHUB_REPO_NAME` (or the joined `GITHUB_REPO="owner/repo"`)
+- `N8N_API_KEY`, `N8N_BASE_URL`
+- Optional: `DRY_RUN=1` to render substituted JSONs to `/tmp` without calling n8n
 
 ```bash
+# Load .env into the current shell
+set -a; source .env; set +a
+
+# Preview what would be sent
+DRY_RUN=1 ./scripts/install-workflows.sh
+
+# Import for real
 ./scripts/install-workflows.sh
 ```
 
 **What it does:**
 
-1. Reads `N8N_BASE_URL` and `N8N_API_KEY` from `.env`.
-2. For each workflow in `workflows/`:
-   - `POST /rest/workflows` with the JSON.
-   - Captures the new workflow ID.
-3. Tells you which credential slots you need to fill in via the n8n UI.
+1. Validates every required env var is set (exits non-zero with a clear message if not).
+2. Renders each `workflows/W*.json` with token substitutions into a tmp file.
+3. Refuses to continue if any `{{PLACEHOLDER}}` is still present in the rendered file.
+4. Extracts `{name, nodes, connections, settings}` via `jq`.
+5. POSTs to `${N8N_BASE_URL}/api/v1/workflows` with `X-N8N-API-KEY` auth.
+6. Prints the created workflow IDs + names and the activation order (`W1 → W3 → W2`).
 
-**Expected output:**
+The workflows are imported **inactive**. You activate them manually in the n8n UI
+(see step 13) — there is no `--activate` flag.
 
-```
-Importing W1-obsidian-git-task-sync.json... workflow id: {{W1_WORKFLOW_ID}}
-Importing W2-morgen-task-completion-sync.json... workflow id: {{W2_WORKFLOW_ID}}
-Importing W3-notion-done-to-obsidian-sync.json... workflow id: {{W3_WORKFLOW_ID}}
+### Credentials in n8n
 
-Next steps:
-  1. Open your n8n workflows list.
-  2. For each imported workflow, click into it and check the credential slots.
-     You'll need:
-       - "Notion (task-maxxing)"     — API key = NOTION_TOKEN
-       - "Morgen (task-maxxing)"     — API key = MORGEN_API_KEY
-       - "GitHub (task-maxxing)"     — PAT     = GITHUB_TOKEN
-  3. Save each workflow.
-  4. Come back and run `./scripts/install-workflows.sh --activate` to turn them on.
-```
+The W1/W2/W3 workflow JSONs in this repo have tokens baked into the workflow `Code`
+nodes at import time (via the `sed` substitution in step 12). The `Code` nodes read
+the baked-in tokens directly — they do NOT reference n8n "Credential" objects for the
+three HTTP calls, so you do not need to create `Notion (task-maxxing)` /
+`Morgen (task-maxxing)` / `GitHub (task-maxxing)` credential entries in the UI.
 
-### Create credentials in n8n
+If you adapt the workflows to use n8n HTTP Request nodes instead of `Code` nodes
+(a common customization), create the credentials like this:
 
-1. Open n8n in your browser.
-2. Go to **Credentials** (left sidebar).
-3. Click **+ Add credential**.
-4. Create three credentials:
-   - **Notion API** — name `Notion (task-maxxing)`, paste `NOTION_TOKEN`.
-   - **HTTP Bearer Auth** — name `Morgen (task-maxxing)`, token = `MORGEN_API_KEY`.
-   - **GitHub API** — name `GitHub (task-maxxing)`, PAT = `GITHUB_TOKEN`.
-5. Open each workflow. Each HTTP-request node should already be pointing at the
-   correct credential slot name. If it isn't, the node will glow red — click and
-   pick the credential from the dropdown.
+- **Notion API** → name it anything, paste `NOTION_TOKEN`.
+- **HTTP Header Auth** (NOT HTTP Bearer Auth) → header name `Authorization`, header
+  value `ApiKey {{MORGEN_API_KEY}}`. This is Morgen's required shape — Bearer auth
+  returns 401.
+- **GitHub API** → PAT = `GITHUB_TOKEN`.
+
+Then bind each HTTP Request node to the corresponding credential in the node editor.
 
 ### Set the GitHub webhook (for W1)
 
@@ -538,22 +602,20 @@ Next steps:
 Order matters. W1 needs to be active before W3 writes anything, and W2 needs to be
 last so it can verify the round-trip.
 
-```bash
-./scripts/install-workflows.sh --activate
-```
+Activation is **manual in the n8n UI** — there is no CLI flag for it (the n8n
+public API does not expose a stable "activate workflow" endpoint today, and the
+UI handles the trigger-binding side effects correctly).
 
-**Expected output:**
+1. Open n8n in your browser and go to **Workflows**.
+2. Click into **W1** (the `Obsidian-Git-Task-Sync` workflow). Toggle **Active** on
+   in the top-right. Confirm the githubTrigger webhook URL is reachable from GitHub.
+3. Click into **W3** (`Notion-Done-To-Obsidian-Sync`). Toggle **Active** on.
+4. Click into **W2** (`Morgen-Task-Completion-Sync`). Toggle **Active** on.
 
-```
-Activating W1 (id={{W1_WORKFLOW_ID}})... ok
-Activating W3 (id={{W3_WORKFLOW_ID}})... ok
-Activating W2 (id={{W2_WORKFLOW_ID}})... ok
-
-All three workflows active. Run a smoke test next — see docs/SETUP.md section 14.
-```
-
-If a workflow fails to activate, the error message is usually "no active trigger".
-That means a credential isn't bound. Fix it in the UI and re-run.
+If a workflow refuses to activate, n8n will usually tell you which node is
+mis-configured. The common causes are: a credential isn't bound, or the
+`githubTrigger` node wasn't able to register the webhook with GitHub (PAT missing
+`metadata: read` scope on the mirror repo).
 
 ---
 
@@ -614,19 +676,21 @@ Final sanity check — make sure the daemon is running and actually committing.
 # The daemon should be listed with a PID > 0
 launchctl list | grep task-maxxing
 
-# Logs should show recent "committed" lines
-tail -20 ~/Library/Logs/task-maxxing-daemon.log
+# Logs should show recent "auto-commit" / "pushed" lines
+tail -20 ~/Library/Logs/task-maxxing.log
 ```
 
-**Expected log lines:**
+**Expected log lines** (from the actual `src/auto-commit.js`):
 
 ```
-[daemon] watching /Users/.../2ndBrain/08-Tasks
-[daemon] debounced: 3 files changed
-[daemon] parsed 47 tasks, 2 created, 1 updated, 0 deleted
-[daemon] committed [bot:daemon] 2026-04-14T15:33:01Z
-[daemon] pushed to origin/main
+[2026-04-14 11:42:01 EDT] auto-commit: TASKS-URGENT.md
+[2026-04-14 11:42:03 EDT] pushed successfully
 ```
+
+The commit message pushed to your mirror repo will start with `[bot:daemon]` —
+e.g. `[bot:daemon] auto: task edit 2026-04-14T15:33:01Z`. This prefix is how W1's
+echo-loop guard knows to skip re-syncing the push back into Notion/Morgen, so if
+you amend the message by hand make sure the `[bot:daemon]` prefix is preserved.
 
 If you see errors here, jump to [TROUBLESHOOTING.md](TROUBLESHOOTING.md) and search
 for the error text.

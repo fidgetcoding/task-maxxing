@@ -55,6 +55,11 @@ const PLACEHOLDER_ALLOWED_PATHS = [
   /\.parameters\.headerParameters(\..*)?$/,
   /\.parameters\.queryParameters(\..*)?$/,
   /\.parameters\.options(\..*)?$/,
+  // githubTrigger owner/repository: n8n stores these as resourceLocator
+  // objects like `{ __rl: true, value: "{{GITHUB_OWNER}}", mode: "name" }`
+  // — the `.value` leaf is where the placeholder lives.
+  /\.parameters\.owner(\..*)?$/,
+  /\.parameters\.repository(\..*)?$/,
 ];
 
 function isAllowedPlaceholderPath(p) {

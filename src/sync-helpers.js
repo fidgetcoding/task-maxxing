@@ -502,7 +502,9 @@ function dateToMorgenLocal(dateStr) {
 // ===========================================================================
 // Commit message helpers — [bot:Wx] prefix prevents echo loops
 // ===========================================================================
-const BOT_COMMIT_PREFIXES = Object.freeze(['[bot:W1]', '[bot:W2]', '[bot:W3]', '[bot:backfill]']);
+// [bot:daemon] is emitted by src/auto-commit.js on every launchd-ticked
+// auto-commit so W1's echo-loop guard can filter daemon-originated pushes.
+const BOT_COMMIT_PREFIXES = Object.freeze(['[bot:W1]', '[bot:W2]', '[bot:W3]', '[bot:backfill]', '[bot:daemon]']);
 function isBotCommitMessage(msg) {
   if (msg == null) return false;
   const s = String(msg);

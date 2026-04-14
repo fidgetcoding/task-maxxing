@@ -8,8 +8,13 @@
 #   NOTION_TOKEN          Notion internal integration token ("ntn_…")
 #   MORGEN_KEY            Morgen API key (used as "ApiKey <key>")
 #   NOTION_DATABASE_ID    Target Notion database ID (with or without dashes)
-#   GITHUB_REPO           "<owner>/<repo>" — the repo n8n watches
+#   GITHUB_REPO_OWNER     The GitHub user/org that owns the task-mirror repo
+#   GITHUB_REPO_NAME      The name of the task-mirror repo
 #   N8N_API_KEY           Your n8n public API key
+#
+# Back-compat shim:
+#   GITHUB_REPO           "<owner>/<repo>" — if set instead of the split pair
+#                         above, the script will split on '/' for you.
 #
 # Optional env vars:
 #   N8N_BASE_URL          Your n8n instance base URL (no default — must be set)
@@ -24,18 +29,29 @@ set -euo pipefail
 : "${NOTION_TOKEN:?NOTION_TOKEN env var required}"
 : "${MORGEN_KEY:?MORGEN_KEY env var required}"
 : "${NOTION_DATABASE_ID:?NOTION_DATABASE_ID env var required}"
-: "${GITHUB_REPO:?GITHUB_REPO env var required (format: owner/repo)}"
 : "${N8N_API_KEY:?N8N_API_KEY env var required}"
 
 : "${N8N_BASE_URL:?N8N_BASE_URL env var required (e.g. https://your-tenant.app.n8n.cloud)}"
 DRY_RUN="${DRY_RUN:-0}"
 
-if [[ "${GITHUB_REPO}" != */* ]]; then
-  echo "[install-workflows] ERROR: GITHUB_REPO must be in '<owner>/<repo>' form (got: ${GITHUB_REPO})" >&2
-  exit 1
+# Preferred: split owner + name (easier to string-concat in shell/JS callers).
+# Back-compat: accept joined GITHUB_REPO="owner/repo".
+if [[ -z "${GITHUB_REPO_OWNER:-}" || -z "${GITHUB_REPO_NAME:-}" ]]; then
+  if [[ -n "${GITHUB_REPO:-}" ]]; then
+    if [[ "${GITHUB_REPO}" != */* ]]; then
+      echo "[install-workflows] ERROR: GITHUB_REPO must be '<owner>/<repo>' (got: ${GITHUB_REPO})" >&2
+      exit 1
+    fi
+    GITHUB_REPO_OWNER="${GITHUB_REPO%%/*}"
+    GITHUB_REPO_NAME="${GITHUB_REPO##*/}"
+  else
+    echo "[install-workflows] ERROR: set GITHUB_REPO_OWNER + GITHUB_REPO_NAME (or GITHUB_REPO)" >&2
+    exit 1
+  fi
 fi
-GITHUB_OWNER="${GITHUB_REPO%%/*}"
-GITHUB_REPO_NAME="${GITHUB_REPO##*/}"
+
+GITHUB_OWNER="${GITHUB_REPO_OWNER}"
+GITHUB_REPO="${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "[install-workflows] ERROR: 'jq' is required but not installed." >&2

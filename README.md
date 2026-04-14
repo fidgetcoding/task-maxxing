@@ -113,21 +113,31 @@ You will need accounts (free tiers are fine for all of these except Morgen Pro):
 git clone https://github.com/lorecraft-io/task-maxxing.git
 cd task-maxxing
 
-# 2. Install deps
+# 2. Install deps (repo has zero runtime deps — just locks package.json)
 npm install
 
 # 3. Copy the example env file and fill in your tokens
 cp examples/sample-.env.example .env
 $EDITOR .env
 
-# 4. Run the interactive installer (creates launchd plist, backfills state)
-./src/install.sh
+# 4. Install the local daemon (wraps Node in a .app bundle + loads launchd)
+BUNDLE_ID=io.example.task-maxxing-daemon \
+WATCH_PATH="$HOME/path/to/your-vault/08-Tasks" \
+SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
+  bash daemon/install-daemon.sh
+# Then grant Full Disk Access to the printed .app bundle in System Settings.
 
-# 5. Import n8n workflows
+# 5. Seed Morgen with your open tasks (one-shot backfill)
+VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+  node scripts/morgen-backfill.js --dry-run       # preview
+VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+  node scripts/morgen-backfill.js                 # live
+
+# 6. Import n8n workflows (DRY_RUN=1 to preview)
 ./scripts/install-workflows.sh
 
-# 6. Activate W1, W2, W3 in the n8n UI
-# 7. Smoke test — see docs/SETUP.md section 14
+# 7. Activate W1, W3, then W2 in the n8n UI
+# 8. Smoke test — see docs/SETUP.md section 14
 ```
 
 Full walkthrough with every click: **[docs/SETUP.md](docs/SETUP.md)**.
@@ -146,11 +156,12 @@ task-maxxing/
 ├── docs/                  SETUP / ARCHITECTURE / TROUBLESHOOTING / CONTRIBUTING
 ├── src/
 │   ├── sync-helpers.js    Hashing, markdown parsing, diff detection
-│   ├── auto-commit.js     The local daemon (file watcher + git committer)
-│   └── install.sh         One-shot interactive installer
+│   └── auto-commit.js     The local daemon (launchd-ticked git committer)
 ├── daemon/
-│   └── io.example.task-maxxing-daemon.plist.template
-│                          launchd template for the daemon
+│   ├── install-daemon.sh  Installer: builds .app bundle + loads LaunchAgent
+│   ├── io.example.task-maxxing-daemon.plist.template
+│   │                      launchd template for the daemon
+│   └── README.md          FDA walkthrough + troubleshooting for the daemon
 ├── workflows/
 │   ├── W1-obsidian-git-task-sync.json     n8n export
 │   ├── W2-morgen-task-completion-sync.json

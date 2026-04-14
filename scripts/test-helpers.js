@@ -3,19 +3,22 @@
  * test-helpers.js
  *
  * Unit tests for src/sync-helpers.js using Node's built-in assert module.
- * Mirrors the ~30 assertions that Nathan's live version passes.
+ * Exercises the real exports documented in sync-helpers.js — priority/area
+ * mapping, path safety, hashing, task parsing, sync-state (de)serialization,
+ * line mutation, Morgen date formatting, and bot commit prefix detection.
  *
- * Expected exports from src/sync-helpers.js (Agent 12 ships this):
- *   - hashTask(taskLineText)         → stable SHA-256 (first 12 hex chars) of canonical form
- *   - priorityToLevel(emoji)         → "highest" | "high" | "medium" | "low" | "lowest" | null
- *   - levelToPriority(level)         → emoji string (inverse of priorityToLevel)
- *   - parseArea(filepath)            → area name ("LORECRAFT", "URGENT", "FIDGETCODING", ...) or null
- *   - isSafePath(p, root)            → boolean — prevents dir traversal escapes outside `root`
- *   - parseTaskLine(line)            → { text, checked, priority, due, scheduled, start, done } | null
- *   - formatTaskLine(task)           → string (round-trip of parseTaskLine)
- *   - canonicalizeTask(task)         → string used as hash input; strips volatile fields
+ * Expected real exports (see the module.exports block of src/sync-helpers.js):
+ *   - parseObsidianPriority, morgenPriorityToObsidian, morgenPriorityToNotion, notionPriorityToInt
+ *   - parseArea, areaKeyToNotionLabel, notionLabelToAreaKey, areaKeyToFile
+ *   - isSafePath  (single-arg — validates against the TASKS-* allowlist)
+ *   - computeTaskHash, computeLineHash
+ *   - parseObsidianTasks
+ *   - emptySyncState, loadSyncState, serializeSyncState, upsertMappingEntry, findByNotionId, findByMorgenId
+ *   - reconstructObsidianLine, flipTaskDone
+ *   - dateToMorgenLocal
+ *   - isBotCommitMessage, BOT_COMMIT_PREFIXES
  *
- * Any assertion failure exits non-zero. This runs in CI via `npm run test:helpers`.
+ * Any assertion failure exits non-zero. Runs in CI via `npm run test:helpers`.
  */
 
 'use strict';
@@ -28,8 +31,7 @@ const helpersPath = path.join(process.cwd(), 'src', 'sync-helpers.js');
 
 if (!fs.existsSync(helpersPath)) {
   console.warn(
-    `::warning::src/sync-helpers.js not present yet — skipping helper unit tests. ` +
-      `Agent 12 ships this; re-run after their commit lands.`
+    `::warning::src/sync-helpers.js not present — skipping helper unit tests.`
   );
   process.exit(0);
 }
@@ -59,178 +61,266 @@ function test(name, fn) {
   }
 }
 
-function has(fnName) {
-  return typeof helpers[fnName] === 'function';
-}
-
 console.log('test-helpers.js — sync-helpers unit tests\n');
 
-// ---------- hashTask / canonicalizeTask ----------
-if (has('hashTask')) {
-  test('hashTask: stable for identical input', () => {
-    const a = helpers.hashTask('- [ ] buy milk 📅 2026-04-20');
-    const b = helpers.hashTask('- [ ] buy milk 📅 2026-04-20');
-    assert.equal(a, b);
-    assert.ok(typeof a === 'string' && a.length >= 8);
-  });
+// Sanity: module.exports must expose the documented surface. If this fails,
+// sync-helpers.js has drifted and the rest of the tests would run against
+// undefined functions.
+const REQUIRED_EXPORTS = [
+  'parseObsidianPriority',
+  'morgenPriorityToNotion',
+  'notionPriorityToInt',
+  'parseArea',
+  'areaKeyToNotionLabel',
+  'notionLabelToAreaKey',
+  'areaKeyToFile',
+  'isSafePath',
+  'computeTaskHash',
+  'parseObsidianTasks',
+  'emptySyncState',
+  'loadSyncState',
+  'serializeSyncState',
+  'upsertMappingEntry',
+  'findByNotionId',
+  'findByMorgenId',
+  'reconstructObsidianLine',
+  'flipTaskDone',
+  'dateToMorgenLocal',
+  'isBotCommitMessage',
+  'BOT_COMMIT_PREFIXES',
+];
 
-  test('hashTask: different text → different hash', () => {
-    const a = helpers.hashTask('- [ ] buy milk 📅 2026-04-20');
-    const b = helpers.hashTask('- [ ] buy eggs 📅 2026-04-20');
-    assert.notEqual(a, b);
-  });
+test('sync-helpers exports: all required functions/constants present', () => {
+  const missing = REQUIRED_EXPORTS.filter((k) => helpers[k] === undefined);
+  assert.deepEqual(missing, [], `missing exports: ${missing.join(', ')}`);
+});
 
-  test('hashTask: checkbox state does not change hash (canonicalized)', () => {
-    // A completed task and its open form should hash to the same canonical key,
-    // so the sync layer matches them across systems.
-    if (has('canonicalizeTask')) {
-      const open = helpers.hashTask('- [ ] buy milk 📅 2026-04-20');
-      const done = helpers.hashTask('- [x] buy milk 📅 2026-04-20 ✅ 2026-04-21');
-      assert.equal(open, done);
-    }
-  });
+// ---------- parseObsidianPriority ----------
+// Canonical mapping (see sync-helpers.js PRIORITY_EMOJI_TO_INT):
+//   🔺 highest → 1, ⏫ high → 2, 🔼 medium → 5, 🔽 low → 7, ⏬ lowest → 9, none → 0
+// parseObsidianPriority takes the EMOJI directly (not a full line) — see
+// the PRIORITY_EMOJI_TO_INT lookup in sync-helpers.js.
+test('parseObsidianPriority: 🔺 → 1 (highest)', () => {
+  assert.equal(helpers.parseObsidianPriority('🔺'), 1);
+});
+test('parseObsidianPriority: ⏫ → 2 (high)', () => {
+  assert.equal(helpers.parseObsidianPriority('⏫'), 2);
+});
+test('parseObsidianPriority: 🔼 → 5 (medium)', () => {
+  assert.equal(helpers.parseObsidianPriority('🔼'), 5);
+});
+test('parseObsidianPriority: 🔽 → 7 (low)', () => {
+  assert.equal(helpers.parseObsidianPriority('🔽'), 7);
+});
+test('parseObsidianPriority: ⏬ → 9 (lowest)', () => {
+  assert.equal(helpers.parseObsidianPriority('⏬'), 9);
+});
+test('parseObsidianPriority: unknown / null → 0', () => {
+  assert.equal(helpers.parseObsidianPriority(null), 0);
+  assert.equal(helpers.parseObsidianPriority('??'), 0);
+});
 
-  test('hashTask: trailing whitespace ignored', () => {
-    const a = helpers.hashTask('- [ ] buy milk 📅 2026-04-20');
-    const b = helpers.hashTask('- [ ] buy milk 📅 2026-04-20   ');
-    assert.equal(a, b);
-  });
-}
-
-// ---------- priorityToLevel / levelToPriority ----------
-if (has('priorityToLevel')) {
-  test('priorityToLevel: 🔺 → highest', () => {
-    assert.equal(helpers.priorityToLevel('🔺'), 'highest');
-  });
-  test('priorityToLevel: ⏫ → high', () => {
-    assert.equal(helpers.priorityToLevel('⏫'), 'high');
-  });
-  test('priorityToLevel: 🔼 → medium', () => {
-    assert.equal(helpers.priorityToLevel('🔼'), 'medium');
-  });
-  test('priorityToLevel: 🔽 → low', () => {
-    assert.equal(helpers.priorityToLevel('🔽'), 'low');
-  });
-  test('priorityToLevel: ⏬ → lowest', () => {
-    assert.equal(helpers.priorityToLevel('⏬'), 'lowest');
-  });
-  test('priorityToLevel: unknown → null', () => {
-    assert.equal(helpers.priorityToLevel('🤷'), null);
-  });
-}
-
-if (has('levelToPriority')) {
-  test('levelToPriority: round-trips all 5 levels', () => {
-    const levels = ['highest', 'high', 'medium', 'low', 'lowest'];
-    for (const lvl of levels) {
-      const emoji = helpers.levelToPriority(lvl);
-      assert.ok(emoji, `expected emoji for ${lvl}`);
-      if (has('priorityToLevel')) {
-        assert.equal(helpers.priorityToLevel(emoji), lvl);
-      }
-    }
-  });
-  test('levelToPriority: unknown → null', () => {
-    assert.equal(helpers.levelToPriority('urgent'), null);
-  });
-}
+// ---------- morgenPriorityToNotion round-trips via notionPriorityToInt ----------
+test('morgen→notion→int round-trip: 1 → "🔺 Highest" → 1', () => {
+  const label = helpers.morgenPriorityToNotion(1);
+  assert.equal(label, '🔺 Highest');
+  assert.equal(helpers.notionPriorityToInt(label), 1);
+});
+test('morgen→notion→int round-trip: 5 → "🔼 Medium" → 5', () => {
+  const label = helpers.morgenPriorityToNotion(5);
+  assert.equal(label, '🔼 Medium');
+  assert.equal(helpers.notionPriorityToInt(label), 5);
+});
+test('morgenPriorityToNotion: 0 (none) → null', () => {
+  assert.equal(helpers.morgenPriorityToNotion(0), null);
+  assert.equal(helpers.notionPriorityToInt(null), 0);
+});
 
 // ---------- parseArea ----------
-if (has('parseArea')) {
-  test('parseArea: TASKS-LORECRAFT.md → LORECRAFT', () => {
-    assert.equal(helpers.parseArea('08-Tasks/TASKS-LORECRAFT.md'), 'LORECRAFT');
-  });
-  test('parseArea: TASKS-URGENT.md → URGENT', () => {
-    assert.equal(helpers.parseArea('08-Tasks/TASKS-URGENT.md'), 'URGENT');
-  });
-  test('parseArea: nested FIDGETCODING/content file', () => {
-    const area = helpers.parseArea('08-Tasks/FIDGETCODING/content/TASKS-FIDGETCODING-content.md');
-    assert.ok(area && /FIDGETCODING/.test(area));
-  });
-  test('parseArea: non-task file → null', () => {
-    assert.equal(helpers.parseArea('03-Permanent/some-note.md'), null);
-  });
-  test('parseArea: TASKS.md hub → null or "HUB"', () => {
-    const v = helpers.parseArea('08-Tasks/TASKS.md');
-    assert.ok(v === null || v === 'HUB' || v === 'TASKS');
-  });
-}
+test('parseArea: TASKS-LORECRAFT.md → LORECRAFT', () => {
+  assert.equal(helpers.parseArea('TASKS-LORECRAFT.md'), 'LORECRAFT');
+});
+test('parseArea: TASKS-URGENT.md → URGENT', () => {
+  assert.equal(helpers.parseArea('TASKS-URGENT.md'), 'URGENT');
+});
+test('parseArea: unknown file falls back to GENERAL', () => {
+  // sync-helpers.js explicitly returns 'GENERAL' for anything it can't classify.
+  assert.equal(helpers.parseArea('03-Permanent/some-note.md'), 'GENERAL');
+});
+test('parseArea: null → GENERAL fallback', () => {
+  assert.equal(helpers.parseArea(null), 'GENERAL');
+});
 
-// ---------- isSafePath ----------
-if (has('isSafePath')) {
-  test('isSafePath: normal child path is safe', () => {
-    assert.equal(helpers.isSafePath('foo/bar.md', '/root'), true);
-  });
-  test('isSafePath: absolute path inside root is safe', () => {
-    assert.equal(helpers.isSafePath('/root/foo/bar.md', '/root'), true);
-  });
-  test('isSafePath: ../ escape is blocked', () => {
-    assert.equal(helpers.isSafePath('../etc/passwd', '/root'), false);
-  });
-  test('isSafePath: absolute outside root is blocked', () => {
-    assert.equal(helpers.isSafePath('/etc/passwd', '/root'), false);
-  });
-  test('isSafePath: embedded .. in middle is blocked', () => {
-    assert.equal(helpers.isSafePath('foo/../../etc/passwd', '/root'), false);
-  });
-}
+// ---------- areaKeyToNotionLabel round-trip ----------
+test('areaKeyToNotionLabel ↔ notionLabelToAreaKey round-trip', () => {
+  const label = helpers.areaKeyToNotionLabel('URGENT');
+  assert.ok(typeof label === 'string' && label.length > 0);
+  assert.equal(helpers.notionLabelToAreaKey(label), 'URGENT');
+});
+test('areaKeyToFile: URGENT → TASKS-URGENT.md', () => {
+  assert.equal(helpers.areaKeyToFile('URGENT'), 'TASKS-URGENT.md');
+});
 
-// ---------- parseTaskLine / formatTaskLine ----------
-if (has('parseTaskLine')) {
-  test('parseTaskLine: plain open task', () => {
-    const t = helpers.parseTaskLine('- [ ] buy milk');
-    assert.ok(t);
-    assert.equal(t.checked, false);
-    assert.ok(/buy milk/.test(t.text));
-  });
-  test('parseTaskLine: completed task', () => {
-    const t = helpers.parseTaskLine('- [x] buy milk ✅ 2026-04-21');
-    assert.ok(t);
-    assert.equal(t.checked, true);
-  });
-  test('parseTaskLine: with due date', () => {
-    const t = helpers.parseTaskLine('- [ ] file taxes 📅 2026-04-15');
-    assert.ok(t);
-    assert.equal(t.due, '2026-04-15');
-  });
-  test('parseTaskLine: with priority', () => {
-    const t = helpers.parseTaskLine('- [ ] ship it ⏫');
-    assert.ok(t);
-    assert.equal(t.priority, '⏫');
-  });
-  test('parseTaskLine: non-task line → null', () => {
-    assert.equal(helpers.parseTaskLine('just some text'), null);
-    assert.equal(helpers.parseTaskLine('# Heading'), null);
-  });
-}
+// ---------- isSafePath (single-arg, allowlist-based) ----------
+test('isSafePath: TASKS-URGENT.md is safe', () => {
+  assert.equal(helpers.isSafePath('TASKS-URGENT.md'), true);
+});
+test('isSafePath: 08-Tasks/TASKS-LORECRAFT.md is safe (leading dir stripped)', () => {
+  assert.equal(helpers.isSafePath('08-Tasks/TASKS-LORECRAFT.md'), true);
+});
+test('isSafePath: traversal ../ is blocked', () => {
+  assert.equal(helpers.isSafePath('../etc/passwd'), false);
+});
+test('isSafePath: absolute paths are blocked', () => {
+  assert.equal(helpers.isSafePath('/etc/passwd'), false);
+});
+test('isSafePath: backslash paths are blocked', () => {
+  assert.equal(helpers.isSafePath('foo\\bar.md'), false);
+});
+test('isSafePath: non-string is blocked', () => {
+  assert.equal(helpers.isSafePath(null), false);
+});
 
-if (has('parseTaskLine') && has('formatTaskLine')) {
-  test('parseTaskLine ↔ formatTaskLine round-trips', () => {
-    const original = '- [ ] ship task-maxxing 📅 2026-04-20 ⏫';
-    const parsed = helpers.parseTaskLine(original);
-    assert.ok(parsed);
-    const formatted = helpers.formatTaskLine(parsed);
-    const reparsed = helpers.parseTaskLine(formatted);
-    assert.ok(reparsed);
-    assert.equal(reparsed.text, parsed.text);
-    assert.equal(reparsed.due, parsed.due);
-    assert.equal(reparsed.priority, parsed.priority);
-    assert.equal(reparsed.checked, parsed.checked);
-  });
-}
+// ---------- computeTaskHash ----------
+// computeTaskHash({sourceFile, text, priority, due, scheduled}) → SHA256-trimmed hex
+test('computeTaskHash: stable for identical input', () => {
+  const a = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'buy milk', priority: 2, due: '2026-04-20' });
+  const b = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'buy milk', priority: 2, due: '2026-04-20' });
+  assert.equal(a, b);
+  assert.ok(typeof a === 'string' && a.length >= 8);
+});
+test('computeTaskHash: different text → different hash', () => {
+  const a = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'buy milk', priority: 2 });
+  const b = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'buy eggs', priority: 2 });
+  assert.notEqual(a, b);
+});
+test('computeTaskHash: different sourceFile → different hash', () => {
+  const a = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'ship it', priority: 2 });
+  const b = helpers.computeTaskHash({ sourceFile: 'TASKS-LORECRAFT.md', text: 'ship it', priority: 2 });
+  assert.notEqual(a, b);
+});
+test('computeTaskHash: completion state is NOT in the hash', () => {
+  // Only the canonical input fields (sourceFile, text, priority, due, scheduled) go
+  // into the hash. `done` / `doneDate` must not affect it.
+  const a = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'ship', priority: 2, due: '2026-04-20' });
+  const b = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'ship', priority: 2, due: '2026-04-20', done: true, doneDate: '2026-04-21' });
+  assert.equal(a, b);
+});
 
-// ---------- canonicalizeTask ----------
-if (has('canonicalizeTask')) {
-  test('canonicalizeTask: strips done date', () => {
-    const c1 = helpers.canonicalizeTask({ text: 'buy milk', checked: false });
-    const c2 = helpers.canonicalizeTask({
-      text: 'buy milk',
-      checked: true,
-      done: '2026-04-21',
-    });
-    assert.equal(c1, c2);
+// ---------- parseObsidianTasks ----------
+test('parseObsidianTasks: parses open + completed lines, skips fences', () => {
+  const md = [
+    '# Tasks',
+    '- [ ] open task 📅 2026-04-20 ⏫',
+    '- [x] done task ✅ 2026-04-19',
+    '',
+    '```',
+    '- [ ] ignore me inside a code fence',
+    '```',
+    '- [ ] another open task',
+  ].join('\n');
+  const tasks = helpers.parseObsidianTasks(md, 'TASKS-URGENT.md');
+  assert.equal(tasks.length, 3);
+  assert.equal(tasks[0].done, false);
+  assert.ok(/open task/.test(tasks[0].text));
+  // ⏫ maps to priority int 2 (see PRIORITY_EMOJI_TO_INT)
+  assert.equal(tasks[0].priority, 2);
+  assert.equal(tasks[0].due, '2026-04-20');
+  assert.equal(tasks[1].done, true);
+  assert.ok(/another open task/.test(tasks[2].text));
+  // Every parsed task should carry a deterministic hash
+  for (const t of tasks) {
+    assert.ok(t.hash && typeof t.hash === 'string');
+  }
+});
+
+// ---------- loadSyncState / serializeSyncState / upsertMappingEntry ----------
+test('loadSyncState: null input returns an empty, versioned state', () => {
+  const s = helpers.loadSyncState(null);
+  assert.ok(s && typeof s === 'object');
+  assert.equal(typeof s._version, 'number');
+  assert.ok(s.entries && typeof s.entries === 'object');
+});
+test('upsertMappingEntry + findByMorgenId round-trip', () => {
+  let s = helpers.loadSyncState(null);
+  s = helpers.upsertMappingEntry(s, 'hash123', {
+    sourceFile: 'TASKS-URGENT.md',
+    text: 'hello',
+    area: 'URGENT',
+    priority: 2,
+    notionPageId: 'note_abc',
+    morgenTaskId: 'tsk_xyz',
   });
-}
+  const json = helpers.serializeSyncState(s);
+  const reloaded = helpers.loadSyncState(json);
+  assert.ok(reloaded.entries.hash123);
+  // findByMorgenId / findByNotionId return { hash, entry } (or null), not a bare hash.
+  const byMorgen = helpers.findByMorgenId(reloaded, 'tsk_xyz');
+  assert.ok(byMorgen && byMorgen.hash === 'hash123');
+  const byNotion = helpers.findByNotionId(reloaded, 'note_abc');
+  assert.ok(byNotion && byNotion.hash === 'hash123');
+});
+
+// ---------- reconstructObsidianLine / flipTaskDone ----------
+test('reconstructObsidianLine: produces a valid task-plugin line', () => {
+  // priority 2 == high (⏫)
+  const line = helpers.reconstructObsidianLine({
+    done: false,
+    text: 'ship task-maxxing',
+    priority: 2,
+    due: '2026-04-20',
+  });
+  assert.ok(typeof line === 'string');
+  assert.ok(line.startsWith('- [ ] '));
+  assert.ok(line.includes('ship task-maxxing'));
+  assert.ok(line.includes('📅 2026-04-20'));
+  assert.ok(line.includes('⏫'));
+});
+
+test('flipTaskDone(line): open checkbox → done, appends ✅ today', () => {
+  // Real signature is flipTaskDone(line) — one arg. It mutates the raw line in
+  // place by flipping `[ ]` → `[x]` and appending `✅ YYYY-MM-DD` if missing.
+  const open = '- [ ] ship it 📅 2026-04-20 ⏫';
+  const done = helpers.flipTaskDone(open);
+  assert.ok(typeof done === 'string');
+  assert.ok(done.startsWith('- [x] '));
+  assert.ok(done.includes('✅'));
+});
+
+// ---------- dateToMorgenLocal ----------
+// Real behavior: "YYYY-MM-DD" → "YYYY-MM-DDT09:00:00" (9am local default)
+test('dateToMorgenLocal: bare date → date + T09:00:00', () => {
+  assert.equal(helpers.dateToMorgenLocal('2026-04-20'), '2026-04-20T09:00:00');
+});
+test('dateToMorgenLocal: full ISO time → stripped to minute second', () => {
+  const v = helpers.dateToMorgenLocal('2026-04-20T15:30:45Z');
+  assert.equal(v, '2026-04-20T15:30:45');
+});
+test('dateToMorgenLocal: empty / null → null', () => {
+  assert.equal(helpers.dateToMorgenLocal(''), null);
+  assert.equal(helpers.dateToMorgenLocal(null), null);
+});
+
+// ---------- isBotCommitMessage / BOT_COMMIT_PREFIXES ----------
+test('BOT_COMMIT_PREFIXES: includes the four real bot prefixes', () => {
+  const set = new Set(helpers.BOT_COMMIT_PREFIXES);
+  for (const p of ['[bot:W1]', '[bot:W2]', '[bot:W3]', '[bot:daemon]']) {
+    assert.ok(set.has(p), `expected BOT_COMMIT_PREFIXES to contain ${p}`);
+  }
+});
+test('isBotCommitMessage: detects a daemon commit', () => {
+  assert.equal(helpers.isBotCommitMessage('[bot:daemon] auto task edit 2026-04-14T15:30:00Z'), true);
+});
+test('isBotCommitMessage: detects a W1 commit', () => {
+  assert.equal(helpers.isBotCommitMessage('[bot:W1] sync Obsidian → Notion + Morgen'), true);
+});
+test('isBotCommitMessage: does NOT match a plain user commit', () => {
+  assert.equal(helpers.isBotCommitMessage('fix: something'), false);
+});
+test('isBotCommitMessage: null / undefined → false', () => {
+  assert.equal(helpers.isBotCommitMessage(null), false);
+  assert.equal(helpers.isBotCommitMessage(undefined), false);
+});
 
 // ---------- Summary ----------
 console.log(`\n${passed} passed, ${failed} failed`);
@@ -240,13 +330,6 @@ if (failed > 0) {
   for (const f of failures) {
     console.error(`  - ${f.name}: ${f.err.message}`);
   }
-  process.exit(1);
-}
-
-// Guard: if NONE of the expected helpers existed, that's also a failure
-// (sync-helpers.js exists but is empty / wrong shape).
-if (passed === 0) {
-  console.error('No tests ran — sync-helpers.js exported none of the expected functions.');
   process.exit(1);
 }
 
