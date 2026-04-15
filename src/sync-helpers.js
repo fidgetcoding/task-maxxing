@@ -242,13 +242,66 @@ function extractRecurrence(text) {
   const rule = (si === -1 ? tail : tail.slice(0, si)).trim();
   return rule || null;
 }
+
+// Extract the Obsidian Tasks plugin 🆔 field. Matches `m-<8hex>` format
+// which identifies Morgen-sync-owned IDs. User-typed or plugin-generated IDs
+// in other formats are IGNORED (returned as null) so we don't clobber them.
+function extractMorgenId(text) {
+  if (!text) return null;
+  const idx = text.indexOf('🆔');
+  if (idx === -1) return null;
+  const tail = text.slice(idx + '🆔'.length);
+  const m = tail.match(/^\s*(m-[0-9a-f]{8})\b/);
+  return m ? m[1] : null;
+}
+function extractAnyId(text) {
+  if (!text) return null;
+  const idx = text.indexOf('🆔');
+  if (idx === -1) return null;
+  const tail = text.slice(idx + '🆔'.length);
+  const m = tail.match(/^\s*([A-Za-z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+function generateMorgenId() {
+  return 'm-' + crypto.randomBytes(4).toString('hex');
+}
+function insertMorgenId(rawLine, newId) {
+  if (rawLine == null) return '';
+  if (newId == null || newId === '') return String(rawLine);
+  const raw = String(rawLine);
+  if (raw.indexOf('🆔') !== -1) return raw;
+  const m = raw.match(TASK_LINE_RE);
+  if (!m) return raw;
+  const indent = m[1] || '';
+  const bullet = m[2] || '-';
+  const statusChar = m[3];
+  const body = m[4] || '';
+  const prefix = indent + bullet + ' [' + statusChar + '] ';
+  const token = '🆔 ' + String(newId);
+  const anchors = ['✅', '📅', '⏳', '🛫', '🔁'];
+  let insertAt = -1;
+  for (const a of anchors) {
+    const idx = body.indexOf(a);
+    if (idx !== -1 && (insertAt === -1 || idx < insertAt)) insertAt = idx;
+  }
+  let newBody;
+  if (insertAt === -1) {
+    newBody = body.replace(/\s+$/, '') + ' ' + token;
+  } else {
+    const head = body.slice(0, insertAt).replace(/\s+$/, '');
+    const tail = body.slice(insertAt);
+    newBody = head + ' ' + token + ' ' + tail;
+  }
+  newBody = newBody.replace(/\s+/g, ' ').replace(/^\s+/, '');
+  return prefix + newBody;
+}
 function stripTaskMetadata(text) {
   if (!text) return '';
   let out = String(text);
   out = out.replace(/[🔺⏫🔼🔽⏬]/g, ' ');
   out = out.replace(/[📅⏳🛫✅]\s*\d{4}-\d{2}-\d{2}/g, ' ');
   out = out.replace(/🔁[^📅⏳🛫✅⏫🔺🔼🔽⏬🆔\n]*/g, ' ');
-  out = out.replace(/🆔\s*\S+/g, ' ');
+  out = out.replace(/🆔\s*[A-Za-z0-9_-]+/g, ' ');
   return out.replace(/\s+/g, ' ').trim();
 }
 
@@ -301,6 +354,7 @@ function parseObsidianTasks(markdown, sourceFilePath) {
     const start = extractDate(body, '🛫');
     const doneDate = extractDate(body, '✅');
     const recurrence = extractRecurrence(body);
+    const morgenId = extractMorgenId(body);
     const cleanText = stripTaskMetadata(body);
 
     const task = {
@@ -312,6 +366,7 @@ function parseObsidianTasks(markdown, sourceFilePath) {
       done,
       doneDate: doneDate || null,
       recurrence,
+      morgenId: morgenId || null,
       lineNo: i + 1,
       rawLine,
       area,
@@ -532,6 +587,10 @@ module.exports = {
   computeLineHash,
   // Parsing
   parseObsidianTasks,
+  extractMorgenId,
+  extractAnyId,
+  generateMorgenId,
+  insertMorgenId,
   // Sync state
   emptySyncState,
   loadSyncState,
