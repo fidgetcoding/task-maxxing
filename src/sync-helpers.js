@@ -473,7 +473,14 @@ function parseObsidianTasks(markdown, sourceFilePath) {
 //     }
 //   }
 // }
-const SYNC_STATE_VERSION = 1;
+// Bumped 2026-04-15 (v4.1): the earlier version had a tag-response-parser
+// bug that silently sent empty tag arrays on every task update, leaving
+// local morgenTagLabels in the entry but with Morgen holding []. v2 forces
+// a one-time re-diff by stripping morgenTagLabels on load, so the next run
+// after upgrade re-pushes the correct tag set for every entry. _tagCache
+// is also dropped on upgrade because the v1 cache held stale numbered
+// labels that the v2 clean-label code no longer looks up.
+const SYNC_STATE_VERSION = 2;
 
 function emptySyncState() {
   return { _version: SYNC_STATE_VERSION, _tagCache: {}, entries: {} };
@@ -485,15 +492,21 @@ function loadSyncState(rawJsonString) {
   try { parsed = JSON.parse(String(rawJsonString)); } catch (_) { return emptySyncState(); }
   if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return emptySyncState();
   const s = emptySyncState();
-  if (typeof parsed._version === 'number') s._version = parsed._version;
-  if (parsed._tagCache && typeof parsed._tagCache === 'object' && !Array.isArray(parsed._tagCache)) {
+  const loadedVersion = typeof parsed._version === 'number' ? parsed._version : 0;
+  const needsV2Migration = loadedVersion < 2;
+  s._version = SYNC_STATE_VERSION;
+  if (!needsV2Migration && parsed._tagCache && typeof parsed._tagCache === 'object' && !Array.isArray(parsed._tagCache)) {
     s._tagCache = Object.assign({}, parsed._tagCache);
   }
   if (parsed.entries && typeof parsed.entries === 'object' && !Array.isArray(parsed.entries)) {
     s.entries = {};
     for (const k of Object.keys(parsed.entries)) {
       const v = parsed.entries[k];
-      if (v && typeof v === 'object') s.entries[k] = Object.assign({}, v);
+      if (v && typeof v === 'object') {
+        const copy = Object.assign({}, v);
+        if (needsV2Migration) delete copy.morgenTagLabels;
+        s.entries[k] = copy;
+      }
     }
   }
   return s;
