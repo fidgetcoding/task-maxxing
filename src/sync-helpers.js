@@ -161,6 +161,73 @@ function areaKeyToFile(key) {
 }
 
 // ===========================================================================
+// Morgen tag labels — CLEAN (no number prefix, no dot separator)
+// ===========================================================================
+// Added 2026-04-15 in response to John Mavrick @ Morgen confirming that task
+// lists are being deprecated in favor of tags in the next Morgen app release.
+// Morgen's tag chip UI looks best with clean labels; Notion still needs the
+// number prefix for sort order. We split the mapping so each side gets the
+// presentation it wants.
+//
+// Multi-value vs single-value: Notion Area is a single-select; Morgen tags are
+// multi-valued. We exploit the multi-value nature to add `Urgent` as a co-tag
+// on high-priority tasks (🔺 priority=1 or ⏫ priority=2) regardless of which
+// file they live in — something the single-value Notion Area could not express.
+const MORGEN_AREAS = Object.freeze({
+  URGENT: 'Urgent',
+  GENERAL: 'General',
+  LORECRAFT: 'Lorecraft',
+  BLOOM: 'Bloom',
+  'CART-BLANCHE': 'Cart-Blanche',
+  'FIDGETCODING-CONTENT': 'Fidgetcoding-Content',
+  'FIDGETCODING-MISC-BUILDING': 'Fidgetcoding-Building',
+  'FUTURE-SCHEDULING': 'Future-Scheduling',
+  'LAVA-NETWORK': 'Lava-Network',
+  MMA: 'MMA',
+  PARZVL: 'Parzvl',
+  WAGMI: 'WAGMI',
+});
+
+/** Internal area key → Morgen tag label (clean, no number prefix) */
+function areaKeyToMorgenLabel(key) {
+  return MORGEN_AREAS[key] || MORGEN_AREAS.GENERAL;
+}
+
+/**
+ * getDesiredMorgenTagLabels(task) → sorted array of Morgen tag label strings
+ *
+ * Derives the full tag set for a task: always includes the file-derived area
+ * tag, plus 'Urgent' when priority is 🔺 (1) or ⏫ (2). URGENT-file tasks
+ * already map to 'Urgent' via areaKeyToMorgenLabel, so the Set.add() is a
+ * no-op in that case — no duplicates possible.
+ *
+ * The returned array is sorted so sameTagLabelSet comparisons are stable.
+ */
+function getDesiredMorgenTagLabels(task) {
+  const labels = new Set();
+  labels.add(areaKeyToMorgenLabel(task && task.area));
+  const p = task && task.priority;
+  if (p === 1 || p === 2) labels.add(MORGEN_AREAS.URGENT);
+  return Array.from(labels).sort();
+}
+
+/**
+ * sameTagLabelSet(a, b) → true if two label arrays represent the same set.
+ *
+ * Order-insensitive comparison; both inputs must be arrays (returns false on
+ * any non-array, including null/undefined). Used by W1 change detection to
+ * decide whether to push a tag update to Morgen.
+ */
+function sameTagLabelSet(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return false;
+  if (a.length !== b.length) return false;
+  const sa = a.slice().sort();
+  const sb = b.slice().sort();
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
+}
+
+// ===========================================================================
 // Path safety — allowlist check (Agent 8 S1 fix)
 // ===========================================================================
 const SAFE_PATH_RE = /^(TASKS-(URGENT|GENERAL|LORECRAFT|BLOOM|CART-BLANCHE|LAVA-NETWORK|MMA|PARZVL|WAGMI)\.md|FIDGETCODING\/(content|misc-building)\/TASKS-FIDGETCODING-(content|misc-building)\.md|FIDGETCODING\/TASKS-FIDGETCODING\.md|FUTURE-SCHEDULING\/TASKS-FUTURE-SCHEDULING\.md)$/;
@@ -580,6 +647,9 @@ module.exports = {
   areaKeyToNotionLabel,
   notionLabelToAreaKey,
   areaKeyToFile,
+  areaKeyToMorgenLabel,
+  getDesiredMorgenTagLabels,
+  sameTagLabelSet,
   // Path safety
   isSafePath,
   // Hashing
@@ -615,6 +685,7 @@ module.exports = {
     NOTION_AREAS,
     NOTION_AREA_TO_KEY,
     AREA_TO_FILE,
+    MORGEN_AREAS,
     SAFE_PATH_RE,
     SYNC_STATE_VERSION,
     TASK_LINE_RE,
