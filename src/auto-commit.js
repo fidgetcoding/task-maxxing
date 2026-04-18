@@ -29,7 +29,7 @@
 
 'use strict';
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -92,8 +92,12 @@ const appendLog = (file, line) => {
 const log = (msg) => appendLog(LOG_PATH, `[${timestamp()}] ${msg}`);
 const heartbeat = (msg) => appendLog(HEARTBEAT_LOG, `[${timestamp()}] ${msg}`);
 
-const git = (args) =>
-  execSync(`git -C "${REPO_PATH}" ${args}`, {
+// Uses execFileSync (array args) instead of execSync (shell string) so
+// values flowing in from env (REPO_PATH, BRANCH) and filesystem-derived
+// commit messages never hit a shell. No quoting, no escaping, no chance
+// of a malicious TASK_MAXXING_BRANCH="; rm -rf ~" breaking out.
+const git = (...args) =>
+  execFileSync('git', ['-C', REPO_PATH, ...args], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
@@ -129,7 +133,7 @@ const main = () => {
   // --- Bail fast if the tree is clean --------------------------------------
   let porcelain;
   try {
-    porcelain = git('status --porcelain').trim();
+    porcelain = git('status', '--porcelain').trim();
   } catch (err) {
     log(`git status failed: ${err.message}`);
     process.exit(1);
@@ -149,7 +153,7 @@ const main = () => {
 
   // --- Stage ---------------------------------------------------------------
   try {
-    git('add -A');
+    git('add', '-A');
   } catch (err) {
     log(`git add failed: ${err.message} — aborting this tick`);
     process.exit(1);
@@ -166,11 +170,7 @@ const main = () => {
   const utcStamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   try {
     const msg = `[bot:daemon] auto: task edit ${utcStamp}`;
-    execSync(`git -C "${REPO_PATH}" commit -m '${msg.replace(/'/g, "'\\''")}'`, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
-    });
+    git('commit', '-m', msg);
   } catch (err) {
     // Empty diff after `add -A` (possible if only ignored files changed)
     // shows up here. That's not a real failure — log and move on.
@@ -185,7 +185,7 @@ const main = () => {
 
   // --- Push ----------------------------------------------------------------
   try {
-    git(`push origin ${BRANCH}`);
+    git('push', 'origin', BRANCH);
   } catch (err) {
     const stderr = (err.stderr && err.stderr.toString()) || err.message;
     log(`push failed — will retry next tick: ${stderr}`);
