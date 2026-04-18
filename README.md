@@ -98,7 +98,7 @@ Six directed edges, three workflows, one local daemon.
 
 A small Node process watches `08-Tasks/**/*.md`, debounces edits, and runs `git add && git commit && git push`. The daemon is the **only** part of the system that touches your local filesystem — all three n8n workflows talk to your vault through the GitHub API. This keeps n8n cloud out of your disk and lets W2 / W3 write back to markdown as regular commits.
 
-> *(A note on "daemon" — as a non-technical builder, I get excited seeing the word "daemon" because, in my experience — correct me if I'm wrong — it just means something might happen automatically, or fast. I'm probably wrong, and I **won't** look it up right now because I feel a deep sense of pride in this parenthetical sentence.)*
+> *(A note on "daemon" — as a non-technical builder, I get excited seeing the word "daemon" because, in my experience — correct me if I'm wrong — it just means something might happen automatically, behind-the-scenes, or fast. I'm probably a bit wrong in some way, but I **won't** look it up right now because I feel a deep sense of pride in this parenthetical sentence.)*
 
 ---
 
