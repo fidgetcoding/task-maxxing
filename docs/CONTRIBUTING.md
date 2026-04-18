@@ -13,7 +13,7 @@ If a PR makes the answers worse, it's probably a no.
 
 ## Who this is for
 
-- **Nathan** (the maintainer) pushes changes directly to `main`. No branches, no PRs,
+- **Nate** (the maintainer) pushes changes directly to `main`. No branches, no PRs,
   no code review from himself.
 - **Outside contributors** should open a PR on GitHub. A PR lets the maintainer review,
   run the e2e tests, and merge.
@@ -24,7 +24,7 @@ If a PR makes the answers worse, it's probably a no.
 
 ## How to propose a change
 
-### If you're Nathan
+### If you're Nate
 
 ```bash
 git pull --rebase origin main
@@ -37,7 +37,7 @@ git push origin main
 
 That's it. No PR, no review cycle.
 
-### If you're not Nathan
+### If you're not Nate
 
 1. **Fork** the repo on GitHub.
 2. **Clone** your fork locally.

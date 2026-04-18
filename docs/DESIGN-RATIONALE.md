@@ -163,7 +163,7 @@ and almost every other decision on this page is a consequence of it.
   laptop, land, and push. The sync picks up all 10 on the next webhook
   fire. No custom app, no offline queue, no sync engine in the client.
   Just files.
-- **Obsidian Tasks plugin.** Nathan uses Clare Macrae's Obsidian Tasks
+- **Obsidian Tasks plugin.** Nate uses Clare Macrae's Obsidian Tasks
   plugin, which has a well-defined line format (emoji markers for due
   date, priority, recurrence, start date, etc.). That format is
   stable, documented, and deterministic to parse. We're parasitizing a
@@ -191,7 +191,7 @@ has collaborators, it has views. Why didn't we pick it?
   property, you PATCH the whole page. That's fine for small tasks but
   it means conflict windows are page-scoped, not field-scoped. A dumb
   write can clobber a smart one.
-- **Notion databases are per-workspace.** If Nathan wants to collaborate
+- **Notion databases are per-workspace.** If Nate wants to collaborate
   with a teammate on a subset of tasks, the natural move is to share one
   Notion database. But he does NOT want to share his full Obsidian
   vault. The model needs to accommodate "one Obsidian, many Notion
@@ -297,7 +297,7 @@ a projection target.
 
 ### 4.1 Why a projection target at all
 
-The Obsidian vault is private. Nathan does not want to share his vault
+The Obsidian vault is private. Nate does not want to share his vault
 with his accountant, his teammate, or his lawyer. But he DOES want
 those people to be able to see specific subsets of his tasks and,
 sometimes, tick them off for him.
@@ -312,7 +312,7 @@ Notion solves this with two features:
 Compared to the alternatives:
 
 - **Google Sheets** — would work, but has no native "done" semantics
-  and no task metaphor. Plus Nathan already removed Google Workspace
+  and no task metaphor. Plus Nate already removed Google Workspace
   integrations.
 - **Linear / Jira / Height** — too much process, too much onboarding
   friction. The goal is "show someone a list," not "spin up a product
@@ -361,7 +361,7 @@ Something has to be the cron box. We considered several options.
 
 - **Schedule triggers.** Runs W2 and W3 every 15 minutes forever.
 - **Webhook triggers.** W1 needs to fire on a GitHub push event.
-- **Hosted.** Nathan doesn't want to maintain yet another Raspberry Pi.
+- **Hosted.** Nate doesn't want to maintain yet another Raspberry Pi.
 - **Visual editor.** The sync logic is non-trivial. Having a UI to
   click through node executions during debugging is worth a lot.
 - **Code nodes.** We need to run non-trivial JavaScript inside the

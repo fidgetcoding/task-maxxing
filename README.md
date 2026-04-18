@@ -8,7 +8,7 @@ apps where knowledge workers actually live: Obsidian (the canonical file store),
 the three and it lands in the other two within a minute — priorities, due dates,
 scheduled blocks, completion state, and all.
 
-This repo is the reference implementation Nathan built for his own vault. It's packaged
+This repo is the reference implementation Nate built for his own vault. It's packaged
 as a kit you can clone, re-point at your own accounts, and run in about two hours.
 
 > **Template vs. instance:** task-maxxing is the template. When you run through setup,
@@ -188,7 +188,7 @@ task-maxxing/
 
 ## Status
 
-**Alpha.** Running in production on Nathan's vault since early 2026, but it has had
+**Alpha.** Running in production on Nate's vault since early 2026, but it has had
 exactly one user. Looking for testers who:
 
 - live in Obsidian for their PKM
