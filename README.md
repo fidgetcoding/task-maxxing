@@ -1,48 +1,56 @@
+<a id="top"></a>
+
+<div align="center">
+
 # task-maxxing
 
-> Perfect bidirectional task organization & syncing-system between Obsidian, Notion, and Morgen — a DIY kit.
+![task-maxxing](https://raw.githubusercontent.com/lorecraft-io/task-maxxing/main/taskmaxxing.png)
 
-**task-maxxing** is an opinionated pipeline that keeps your tasks in sync across the three
-apps where knowledge workers actually live: Obsidian (the canonical file store), Notion
-(the shareable UI), and Morgen (the calendar / auto-scheduler). Edit a task in any of
-the three and it lands in the other two within a minute — priorities, due dates,
-scheduled blocks, completion state, and all.
+**Perfect three-way task sync between Obsidian, Notion, and Morgen — a DIY kit.**
 
-This repo is the reference implementation Nate built for his own vault. It's packaged
-as a kit you can clone, re-point at your own accounts, and run in about two hours.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> **Template vs. instance:** task-maxxing is the template. When you run through setup,
-> you'll create your own private `YOUR-VAULT-tasks` repo (step 8) — that's where your
-> live sync state, `.sync-state.json`, and workflow commits actually live. This repo stays
-> clean and reusable. Think of it like `create-react-app` vs your actual app.
+</div>
 
 ---
 
-## Why
+> [!IMPORTANT]
+> **Template vs. instance.** `task-maxxing` is the **template**. When you run through setup, you'll create your own private `YOUR-VAULT-tasks` repo (step 8) — that's where your live sync state, `.sync-state.json`, and workflow commits actually live. This repo stays clean and reusable. Think `create-react-app` vs. your actual app.
 
-If you're reading this you've probably already tried:
+---
 
-- **Notion alone** — beautiful UI, no local file store, no auto-scheduler.
-- **Obsidian alone** — canonical files, no shareable UI, no calendar.
-- **Motion / Morgen alone** — auto-scheduling, no knowledge graph.
-- **Zapier / Make** — starts fine, dies the moment you need three-way sync with a
-  source-of-truth rule and conflict resolution.
-- **A single super-app** — doesn't exist, and if it did it would lock you in.
+## What this is
 
-The missing piece is a **three-way sync with one canonical source**. task-maxxing makes
-Obsidian canonical (plain markdown, lives in git, survives every tool change for the
-next decade) and treats Notion and Morgen as live mirrors you can edit bidirectionally.
+`task-maxxing` keeps one task in sync across the three apps I actually live in: **Obsidian** (my files), **Notion** (the pretty UI I can share), and **Morgen** (the calendar that auto-schedules my day). Tick a box in any one of them and the other two catch up in under a minute — priority, due date, scheduled block, completion state, everything.
 
-Concretely, you get:
+This repo is the reference implementation I built for my own vault. It's packaged as a kit you can clone, re-point at your own accounts, and run in about two hours.
 
-- **Edit anywhere.** Check a task off in Morgen on your phone, it's checked in Notion
-  and Obsidian 30 seconds later.
-- **One source of truth.** Your `.md` files in `08-Tasks/` are canonical. Notion and
-  Morgen are regenerated mirrors — if they ever drift, the markdown wins.
-- **Git-backed history.** Every task edit is a git commit. Time-travel, blame,
-  diffs, cherry-pick, the works.
-- **No vendor lock-in.** Turn the pipeline off tomorrow and your data is still a
-  directory of markdown files.
+### Do you actually need a three-way sync?
+
+Honestly? Probably not. For most people, pick one app and live there.
+
+But if you're reading this you probably have ADHD and are trying to stay organized while juggling 43 side projects in 10+ Claude Code instances at the same time — and you refuse to update the same task in three different places like some kind of manual-labor peasant. Same. That's who this is for.
+
+The only paid piece is an **n8n subscription** (which I was paying for anyway for other automation). Everything else — Obsidian, Notion, Morgen's free tier, GitHub, Node — is free or already on your machine.
+
+---
+
+## Why not just...
+
+- **Notion alone** — gorgeous UI, no local files, no auto-scheduler. If Notion goes down, your day goes down.
+- **Obsidian alone** — canonical markdown files, no shareable UI, no calendar.
+- **Motion / Morgen alone** — auto-scheduling magic, no knowledge graph, no file store.
+- **Zapier / Make** — fine for two-way flows, dies the moment you need **three-way** sync with a source-of-truth rule + real conflict resolution.
+- **A single super-app** — doesn't exist. If it did, it'd lock you in and then get bought by Atlassian.
+
+The missing piece is **three-way sync with one canonical source**. `task-maxxing` makes Obsidian canonical (plain markdown, lives in git, still readable in ten years when every SaaS in this list is dead) and treats Notion and Morgen as live mirrors you can edit bidirectionally.
+
+### What you actually get
+
+- **Edit anywhere.** Check a task off in Morgen on your phone, it's checked in Notion and Obsidian inside a minute.
+- **One source of truth.** Your `.md` files in `08-Tasks/` are canonical. Notion and Morgen are regenerated mirrors — if they drift, the markdown wins.
+- **Git-backed history.** Every task edit is a git commit. Time-travel, blame, diffs, the works.
+- **No vendor lock-in.** Turn the whole pipeline off tomorrow and your data is still a folder of markdown files.
 
 ---
 
@@ -88,24 +96,23 @@ Six directed edges, three workflows, one local daemon.
 
 ### Daemon (local, macOS)
 
-A small Node process watches `08-Tasks/**/*.md`, debounces edits, `git add && git commit &&
-git push`. The daemon is the *only* part of the system that touches your local filesystem
-— all three n8n workflows interact with your vault via the GitHub API. This keeps n8n
-cloud out of your filesystem and lets W2 / W3 write back to markdown as regular commits.
+A small Node process watches `08-Tasks/**/*.md`, debounces edits, and runs `git add && git commit && git push`. The daemon is the **only** part of the system that touches your local filesystem — all three n8n workflows talk to your vault through the GitHub API. This keeps n8n cloud out of your disk and lets W2 / W3 write back to markdown as regular commits.
+
+> *(A note on "daemon" — as a non-technical builder, I get excited seeing the word "daemon" because, in my experience — correct me if I'm wrong — it just means something might happen automatically, or fast. I'm probably wrong, and I **won't** look it up right now because I feel a deep sense of pride in this parenthetical sentence.)*
 
 ---
 
 ## Prerequisites
 
-You will need accounts (free tiers are fine for all of these except Morgen Pro):
+You'll need accounts (free tiers are fine for all of these except Morgen Pro):
 
-- **Obsidian vault** with a `08-Tasks/` folder (any structure, area files named `TASKS-*.md`)
-- **Notion workspace** + ability to create an internal integration
-- **Morgen account** (Pro tier for API access)
-- **n8n cloud** account (or a self-hosted instance — you do you)
+- **Obsidian vault** with a `08-Tasks/` folder (any structure — area files named `TASKS-*.md`)
+  - 👉 **Don't have a vault yet?** Use my [**2ndBrain-mogging**](https://github.com/lorecraft-io/2ndBrain-mogging) setup as your starting point. It's the best-of-5 different second-brain systems — I merged the good parts of Karpathy / Jens / eugeniu / AgriciDaniel / NicholasSpisak, cut the dead folders and redundant logic, and shipped what's left. Everything you want, everything you actually need, nothing you don't. `task-maxxing` drops straight into its `08-Tasks/` folder.
+- **Notion workspace** + the ability to create an internal integration
+- **Morgen account** (Pro tier, for API access)
+- **n8n cloud** account (or self-hosted — you do you)
 - **GitHub account** with room for one private repo
-- **macOS** (for the local daemon — the plist/launchd bits are macOS-specific; Linux users
-  can adapt with systemd, PRs welcome)
+- **macOS** (for the local daemon — the plist/launchd bits are macOS-specific; Linux users can adapt with systemd, PRs welcome)
 - **Node.js 20+** and **git** locally
 - **Homebrew** (optional, for installing dependencies)
 
@@ -188,26 +195,21 @@ task-maxxing/
 
 ## Status
 
-**Alpha.** Running in production on Nate's vault since early 2026, but it has had
-exactly one user. Looking for testers who:
+**Alpha.** Running in production on my vault since early 2026, but it's had exactly one user. Looking for testers who:
 
 - live in Obsidian for their PKM
 - want Notion as a shareable UI
 - use Morgen (or want to) as their auto-scheduler
 - are comfortable running a local daemon and debugging n8n
 
-Open an issue or a discussion if you try it. Bug reports with `.sync-state.json` snippets
-and n8n execution logs are gold.
+Open an issue or a discussion if you try it. Bug reports with `.sync-state.json` snippets and n8n execution logs are gold.
 
 ### Known quirks
 
-- **macOS only** for the daemon (launchd). Linux/Windows users need to port.
-- **Morgen "inbox" task list only.** Morgen's API doesn't yet expose task-list
-  management, so all tasks land in your default inbox list.
-- **Morgen task-to-calendar promotion is unavailable** via API. You'll still need to
-  drag tasks onto the calendar in Morgen's UI (or rely on Morgen's auto-scheduler).
-- **Rate budget:** W1 is capped at ~100 Notion ops and ~100 Morgen ops per run to stay
-  inside Notion's 3 req/s and Morgen's 100 points / 15 min.
+- **macOS only** for the daemon (launchd). Linux / Windows users need to port it.
+- **Morgen "inbox" task list only.** Morgen's API doesn't yet expose task-list management, so everything lands in your default inbox list.
+- **Morgen task-to-calendar promotion is unavailable** via API. You'll still drag tasks onto the calendar in Morgen's UI (or lean on Morgen's auto-scheduler).
+- **Rate budget:** W1 is capped at ~100 Notion ops and ~100 Morgen ops per run to stay inside Notion's 3 req/s and Morgen's 300 points / 15 min.
 
 ---
 
@@ -219,9 +221,6 @@ MIT — see [LICENSE](LICENSE).
 
 ## Credits
 
-Built by **Nate Davidovich** ([lorecraft-io](https://github.com/lorecraft-io)) after a
-few too many hours wondering why nobody else had shipped a working three-way task sync.
-This is the reference implementation that powers his personal 2ndBrain vault.
+Built by **Nate Davidovich** ([lorecraft-io](https://github.com/lorecraft-io)) after a few too many hours wondering why nobody else had shipped a working three-way task sync. This is the reference implementation that powers my personal 2ndBrain vault.
 
-If you ship a port (Linux daemon, Windows service, Todoist replacement, etc.), open a
-PR and I'll link it from here.
+If you ship a port (Linux daemon, Windows service, Todoist replacement, etc.), open a PR and I'll link it from here.
