@@ -124,7 +124,7 @@ REQUIRED (env or flag):
 
 FLAGS:
   --dry-run           Print all planned payloads + points cost, make NO API calls
-  --max-points <n>    Hard cap on rate-limit budget (default 85, of 100)
+  --max-points <n>    Hard cap on rate-limit budget (default 85, of 300)
   --verbose, -v       Log every API call
   --help, -h          Show this message
 
@@ -392,8 +392,8 @@ async function main() {
   if (projectedPoints > args.maxPoints) {
     log.err('');
     log.err(`BUDGET ABORT: projected ${projectedPoints} pts exceeds cap ${args.maxPoints}.`);
-    log.err('The Morgen API hard limit is 100 pts / 15-minute sliding window, account-wide.');
-    log.err('Split this backfill into batches OR raise --max-points (not above ~95) once the window is clean.');
+    log.err('The Morgen API hard limit is 300 pts / 15-minute sliding window, account-wide.');
+    log.err('Split this backfill into batches OR raise --max-points (up to ~280) once the window is clean.');
     log.err(`Suggested batch size: ${Math.max(1, args.maxPoints - POINTS_TAGS_LIST - labelsToCreate.length)} tasks per window.`);
     process.exit(2);
   }
