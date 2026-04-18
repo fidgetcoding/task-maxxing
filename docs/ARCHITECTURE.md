@@ -128,8 +128,11 @@ Disk Access, loading the LaunchAgent) see `daemon/README.md`.
 5. Batches operations per service:
    - **Notion:** for each op, calls `POST /v1/pages` (create), `PATCH /v1/pages/:id`
      (update), or `PATCH` with `archived: true` (archive). Throttled to 3 req/s.
-   - **Morgen:** for each op, calls `POST /v3/tasks`, `PATCH /v3/tasks/:id`, or
-     `DELETE /v3/tasks/:id`. Throttled to stay under 100 points / 15 min.
+   - **Morgen:** for each op, calls `POST /v3/tasks/create`, `POST /v3/tasks/update`,
+     or `POST /v3/tasks/close`. (Morgen exposes close semantics, not delete — there
+     is no `/v3/tasks/delete` endpoint.) Throttled to stay well under the 300 points
+     / 15 min Morgen ceiling (raised from 100 on 2026-04-15; cost per op verified
+     via live probe 2026-04-18: create = 1 pt, list = 10 pts).
 6. On success, writes the updated `{notionPageId, morgenTaskId, morgenEtag, lastSyncedAt, lastSyncedHash}`
    fields back into `.sync-state.json` via a GitHub contents API commit (with a
    `[bot:W1]` commit prefix so the daemon and W1 don't echo-loop).
@@ -431,8 +434,8 @@ This keeps us under:
 
 - Notion's 3 req/s rate limit (100 ops at 3 req/s ≈ 34s, well inside the 60s workflow
   timeout).
-- Morgen's 100 points / 15 min rate limit (100 ops × 1 point ≈ exactly at the cap —
-  which is why creates/updates are the only ops we batch).
+- Morgen's 300 points / 15 min rate limit (100 ops × 1 point ≈ one-third of the cap —
+  comfortable headroom since Morgen raised the ceiling from 100 to 300 on 2026-04-15).
 
 ### 2. Flip ratio guard
 
@@ -493,11 +496,14 @@ W1 writing.
 
 Morgen's API is functional but has sharp edges worth knowing about.
 
-### Rate limit: 100 points / 15 min
+### Rate limit: 300 points / 15 min (raised from 100 on 2026-04-15)
 
-Morgen uses a point-based rate limit. Most ops are 1 point; a couple of bulk
-endpoints are more. task-maxxing treats everything as 1 point and stays under 100
-ops per 15-min window.
+Morgen uses a point-based rate limit. Observed costs (verified via live probe
+2026-04-18): `/v3/tasks/create` = 1 pt, `/v3/tasks/list` = 10 pts, `/v3/tags` = 10 pts.
+Responses expose `ratelimit-limit`, `ratelimit-remaining`, and `ratelimit-reset`
+headers (lowercase, IETF draft-style) you can poll to stay honest. task-maxxing
+throttles W1 to ~100 ops per 15-min window — leaving ~200pt headroom against the
+300pt ceiling for parallel callers and Morgen's own background tasks.
 
 ### Task-to-calendar API is unavailable
 

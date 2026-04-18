@@ -33,11 +33,14 @@
  *   1  runtime / API error
  *   2  budget-abort (would exceed --max-points)
  *
- * Rate limit (hard): 100 pts / 15 min sliding window, shared account-wide.
+ * Rate limit (hard): 300 pts / 15 min sliding window, shared account-wide
+ * (Morgen raised this from 100 → 300 on 2026-04-15).
  *   tags/list   = 10 pts
  *   tags/create = 1 pt
  *   tasks/create= 1 pt
- * Default --max-points 85 leaves a 15pt buffer for other callers in-window.
+ * Default --max-points 85 is conservative — leaves ~215pt headroom for
+ * other callers in-window. You can safely raise it to ~280 if you know
+ * nothing else is hammering Morgen during the backfill.
  *
  * NOTE: This script does NOT commit .sync-state.json. It writes the file
  * to disk only. Review the diff and commit manually when ready.

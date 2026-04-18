@@ -153,6 +153,9 @@ npm install
 cp examples/sample-.env.example .env
 $EDITOR .env
 
+# 3b. Load .env into the current shell (steps 5 + 6 read these env vars)
+set -a; source .env; set +a
+
 # 4. Install the local daemon (wraps Node in a .app bundle + loads launchd)
 BUNDLE_ID=io.example.task-maxxing-daemon \
 WATCH_PATH="$HOME/path/to/your-vault/08-Tasks" \
@@ -161,10 +164,9 @@ SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
 # Then grant Full Disk Access to the printed .app bundle in System Settings.
 
 # 5. Seed Morgen with your open tasks (one-shot backfill)
-VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
-  node scripts/morgen-backfill.js --dry-run       # preview
-VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
-  node scripts/morgen-backfill.js                 # live
+#    Reads MORGEN_API_KEY + VAULT_PATH from the .env you sourced in step 3b.
+node scripts/morgen-backfill.js --dry-run       # preview
+node scripts/morgen-backfill.js                 # live
 
 # 6. Import n8n workflows (DRY_RUN=1 to preview)
 ./scripts/install-workflows.sh
@@ -196,6 +198,7 @@ task-maxxing/
 │   │                      launchd template for the daemon
 │   └── README.md          FDA walkthrough + troubleshooting for the daemon
 ├── workflows/
+│   ├── README.md               Import-order notes + placeholder reference
 │   ├── W1-obsidian-git-task-sync.json     n8n export
 │   ├── W2-morgen-task-completion-sync.json
 │   └── W3-notion-done-to-obsidian-sync.json
@@ -204,8 +207,10 @@ task-maxxing/
 ├── scripts/
 │   ├── morgen-backfill.js       One-time tag/ID backfill
 │   ├── sync-e2e-tests.js        End-to-end smoke tests
+│   ├── test-helpers.js          Unit tests for src/sync-helpers.js
 │   ├── install-workflows.sh     Imports workflows via the n8n API
-│   └── validate-sync-state.js   Lints your `.sync-state.json`
+│   ├── validate-sync-state.js   Lints your `.sync-state.json`
+│   └── validate-workflows.js    Lints exported n8n workflow JSON
 └── examples/
     ├── sample-sync-state.json
     ├── sample-TASKS-URGENT.md

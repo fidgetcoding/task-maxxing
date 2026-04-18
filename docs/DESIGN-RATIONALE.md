@@ -664,16 +664,18 @@ still marked done) because the replay flows through Obsidian.
 "it's safe under pathological inputs." Here are the rails that exist to
 keep pathological runs from wrecking state.
 
-### 9.1 Morgen rate budget (100 points / 15 min)
+### 9.1 Morgen rate budget (300 points / 15 min, raised from 100 on 2026-04-15)
 
-Hard-coded into W1 and W2. If a sync run would spend more than 100
-Morgen points, it stops at 100 and lets the next run pick up the
-remainder. The rationale: better a slow sync than a throttled sync
-that leaves state half-written.
+W1 and W2 throttle to ~100 ops per 15-min window — set when Morgen's
+cap was 100 and kept as-is now that the cap is 300. The rationale:
+leave room for other callers (the Morgen app, other automations) so a
+busy sync run doesn't starve everything else. Better a conservative
+throttle than a hostile neighbor.
 
 This is why `morgen-backfill.js` exists as a separate script —
-bootstrapping an existing 200-task vault takes several 15-min windows
-and is worth doing explicitly, outside the W1 hot path.
+bootstrapping an existing 200+ task vault still takes multiple 15-min
+windows under the conservative throttle, and is worth doing explicitly,
+outside the W1 hot path.
 
 ### 9.2 Flip-ratio guard (30% max)
 
@@ -733,18 +735,34 @@ Every integration is a love letter to the API it integrates against.
 Here are the specific Morgen quirks that forced architectural
 decisions.
 
-### 10.1 Rate limit: 100 points / 15 min, variable cost per op
+### 10.1 Rate limit: 300 points / 15 min (raised from 100 on 2026-04-15), variable cost per op
 
-Creates are expensive (10+ points each). Lists are cheap (1 point).
-Updates are medium. The budget is on the aggregate, not per-endpoint.
+Per-op cost table, verified via live API probe on 2026-04-18:
+
+| Endpoint               | Cost    | Notes                                          |
+|------------------------|---------|------------------------------------------------|
+| `POST /v3/tasks/create`| **1 pt**| Confirmed by single-call remaining delta (270→269). |
+| `POST /v3/tasks/update`| 1 pt    | Assumed 1 pt per the `morgen-backfill.js` header table. |
+| `POST /v3/tasks/close` | 1 pt    | Assumed 1 pt (completion; also used for W2 write-back). |
+| `GET  /v3/tasks/list`  | 10 pts  | Confirmed by list-call deltas during probe. Expensive — cache.  |
+| `GET  /v3/tags`        | 10 pts  | Ditto — cache aggressively.                    |
+| `POST /v3/tags/create` | 1 pt    | From script header table.                       |
+
+The budget is on the aggregate, not per-endpoint. Morgen exposes **close**
+semantics, not delete — there is no `/v3/tasks/delete` endpoint.
 
 Consequences:
 
-- W1's Morgen branch calls `list_tasks` first (cheap), diffs against
-  sync-state, and only writes deltas.
-- W2 polls via `list_tasks` (1 point) and only writes on state change.
-- Backfill is a separate script because 200 creates × 10 points = 2000
-  points, which is five full 15-min windows.
+- W1's Morgen branch calls `list_tasks` first (10 pts, not 1 — caches the
+  result across the run), diffs against sync-state, and only writes deltas.
+- W2 polls via `list_tasks` (10 pts) on its 60s cron and only writes on
+  state change. The 10-pt list is the fixed cost of every W2 tick.
+- Backfill is still a separate script: at 1 pt per create, a 200-task vault
+  fits inside a single 15-min window at the 300pt ceiling (200 creates +
+  1 list ≈ 210 pts), but anything larger (or combined with other Morgen
+  callers sharing the window) spills into a second window. The script's
+  `--max-points 85` default keeps it conservative and friendly to parallel
+  callers (the Morgen app itself, other automations).
 
 ### 10.2 No task-to-calendar linking via API
 
