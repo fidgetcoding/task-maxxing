@@ -181,7 +181,10 @@ function walkMarkdown(dir) {
 // Morgen HTTP client (zero deps)
 // ---------------------------------------------------------------------------
 
-function morgenRequest(apiKey, method, pathSuffix, body) {
+// One HTTP attempt. Returns {status, body, headers} on ANY HTTP response
+// (never rejects on non-2xx — that's morgenRequest()'s job).
+// Rejects only on socket / network error.
+function morgenRequestOnce(apiKey, method, pathSuffix, body) {
   return new Promise((resolve, reject) => {
     const data = body ? JSON.stringify(body) : null;
     const options = {
@@ -206,17 +209,55 @@ function morgenRequest(apiKey, method, pathSuffix, body) {
         const status = res.statusCode || 0;
         let parsed = null;
         try { parsed = chunks ? JSON.parse(chunks) : null; } catch (_) { parsed = chunks; }
-        if (status < 200 || status >= 300) {
-          const msg = typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
-          return reject(new Error(`Morgen ${method} ${pathSuffix} → ${status}: ${msg}`));
-        }
-        resolve(parsed);
+        resolve({ status, body: parsed, headers: res.headers || {} });
       });
     });
     req.on('error', reject);
     if (data) req.write(data);
     req.end();
   });
+}
+
+// Retry config for 429 handling.
+// Complements (does not replace) the pre-flight --max-points budget check:
+// budget keeps us from *starting* a too-expensive run; retry handles the
+// case where another Morgen caller (the app itself, another automation)
+// drains the shared 300pt window between our budget check and our writes.
+const MORGEN_MAX_RETRIES = 3;
+const MORGEN_BACKOFF_BASE_MS = 2000;
+const MORGEN_BACKOFF_CAP_MS  = 60000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function morgenRequest(apiKey, method, pathSuffix, body) {
+  for (let attempt = 0; attempt <= MORGEN_MAX_RETRIES; attempt++) {
+    const { status, body: parsed, headers } = await morgenRequestOnce(apiKey, method, pathSuffix, body);
+    if (status >= 200 && status < 300) return parsed;
+
+    // 429 → back off and retry. Prefer server-supplied wait time:
+    //   - Retry-After (seconds per RFC 7231)
+    //   - ratelimit-reset (seconds; Morgen uses this — IETF draft-style)
+    // Fall back to exponential (2s, 4s, 8s, ...), capped at 60s.
+    if (status === 429 && attempt < MORGEN_MAX_RETRIES) {
+      const retryAfterRaw = headers['retry-after'] || headers['ratelimit-reset'] || '';
+      const retryAfterSec = parseInt(retryAfterRaw, 10);
+      const waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+        ? Math.min(retryAfterSec * 1000, MORGEN_BACKOFF_CAP_MS)
+        : Math.min(MORGEN_BACKOFF_BASE_MS * Math.pow(2, attempt), MORGEN_BACKOFF_CAP_MS);
+      process.stderr.write(
+        `[morgen] 429 on ${method} ${pathSuffix} (attempt ${attempt + 1}/${MORGEN_MAX_RETRIES + 1}); ` +
+        `waiting ${Math.round(waitMs / 1000)}s before retry\n`
+      );
+      await sleep(waitMs);
+      continue;
+    }
+
+    // Any other non-2xx (or 429 after retries exhausted) → throw.
+    const msg = typeof parsed === 'string' ? parsed : JSON.stringify(parsed);
+    throw new Error(`Morgen ${method} ${pathSuffix} → ${status}: ${msg}`);
+  }
+  // Unreachable — the loop above always returns or throws.
+  throw new Error(`Morgen ${method} ${pathSuffix} → 429: retries exhausted`);
 }
 
 // ---------------------------------------------------------------------------
