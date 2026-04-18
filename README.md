@@ -1,6 +1,6 @@
 # task-maxxing
 
-> Perfect bidirectional task sync between Obsidian, Notion, and Morgen — a DIY kit.
+> Perfect bidirectional task organization & syncing-system between Obsidian, Notion, and Morgen — a DIY kit.
 
 **task-maxxing** is an opinionated pipeline that keeps your tasks in sync across the three
 apps where knowledge workers actually live: Obsidian (the canonical file store), Notion
