@@ -104,19 +104,20 @@ Morgen API: 429 Too Many Requests
 or the Morgen backfill script exits with:
 
 ```
-[ERROR] Rate limit exceeded: 100 points / 15 min
+[ERROR] Rate limit exceeded: 300 points / 15 min
 ```
 
 **Cause**
 
-Morgen's rate limit is 100 points per 15-minute rolling window. Creates, updates,
-and deletes are 1 point each. Hitting 100 in one W1 run means you had >100 Morgen
-ops queued.
+Morgen's rate limit is 300 points per 15-minute rolling window (raised from 100 on
+2026-04-15). Creates, updates, and deletes are 1 point each. Hitting 300 in one W1
+run means you had >300 Morgen ops queued.
 
 **Diagnostic**
 
 Look at the n8n execution log for W1. Count the number of Morgen ops. If you're near
-100, you're hitting the budget. If you're near 200, you're doing a full backfill.
+300, you're hitting the budget. Near 500+, you're doing a full backfill — use
+`morgen-backfill.js` for those instead of letting W1 handle it.
 
 **Fix**
 

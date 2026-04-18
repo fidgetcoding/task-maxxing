@@ -510,8 +510,8 @@ This will:
    ```
 
 **Expected runtime:** 30–90 seconds for a typical backlog of <80 tasks. The
-100 pts / 15 min ceiling is the upper bound — the default `--max-points 85` leaves
-headroom.
+300 pts / 15 min ceiling (raised from 100 on 2026-04-15) is the upper bound — the
+default `--max-points 85` leaves generous headroom.
 
 **Budget abort?** If the projected cost exceeds `--max-points`, the script exits 2
 with a suggested batch size. Split the backfill into batches (wait 15 min between)

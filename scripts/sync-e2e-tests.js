@@ -243,7 +243,7 @@ function simulateW1({ vaultDir, stateFile, notion, morgen }) {
   // 2. Diff vs state
   const newTasks = allTasks.filter((t) => !state.entries[t.hash]);
 
-  // 3. Morgen rate budget (100pt / 15min window, reserve 85 for W1)
+  // 3. Morgen rate budget (300pt / 15min window as of 2026-04-15, reserve 85 for W1)
   //    Formula per task: ~2 pts (tag work included). Plus 10 for tags/list.
   const projectedCost = 10 + newTasks.length * 2;
   if (projectedCost > 85) {
