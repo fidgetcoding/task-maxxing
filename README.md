@@ -14,6 +14,27 @@
 
 ---
 
+## Quick Navigation
+
+| Link | Section | What it does | Time |
+|---|---|---|---|
+| [What this is](#what-this-is) | Overview | The TL;DR — what the kit actually does | ~1 min |
+| [Do you actually need this?](#do-you-actually-need-a-three-way-sync) | Audience | ADHD honesty check — who this is (and isn't) for | ~1 min |
+| [Why not just...](#why-not-just) | Context | Why Notion / Obsidian / Motion / Zapier alone all fail | ~2 min |
+| [What you actually get](#what-you-actually-get) | Reference | Edit-anywhere, canonical source, git history, no lock-in | ~1 min |
+| [Architecture](#architecture) | Overview | Six directed edges, three workflows, one daemon | ~1 min |
+| [Workflow glossary](#workflow-glossary) | Reference | W1 / W2 / W3 — what each triggers and does | ~1 min |
+| [Daemon (local, macOS)](#daemon-local-macos) | Reference | The only thing that touches your filesystem | ~1 min |
+| [Prerequisites](#prerequisites) | Setup | Accounts + tools (Obsidian, Notion, Morgen, n8n, GitHub, macOS) | ~2 min |
+| [Quickstart](#quickstart) | Setup | Clone → env → daemon → backfill → n8n → smoke test | ~2 min |
+| [What's in the box](#whats-in-the-box) | Reference | Repo file-tree tour | ~1 min |
+| [Status](#status) | Meta | Alpha — running on my vault, looking for testers | ~1 min |
+| [Known quirks](#known-quirks) | Reference | macOS-only daemon, Morgen inbox-only, rate budget | ~1 min |
+| [License](#license) | Meta | MIT | — |
+| [Credits](#credits) | Meta | Built by Nate Davidovich | — |
+
+---
+
 > [!IMPORTANT]
 > **Template vs. instance.** `task-maxxing` is the **template**. When you run through setup, you'll create your own private `YOUR-VAULT-tasks` repo (step 8) — that's where your live sync state, `.sync-state.json`, and workflow commits actually live. This repo stays clean and reusable. Think `create-react-app` vs. your actual app.
 
