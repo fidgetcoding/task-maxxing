@@ -605,7 +605,7 @@ vendor risk is capped.
 ### Todoist MCP / Motion MCP
 
 Both are one-app-at-a-time. Motion doesn't round-trip to Obsidian without custom code.
-Todoist hit Nathan's free-tier project cap within a week and was uninstalled.
+Todoist hit Nate's free-tier project cap within a week and was uninstalled.
 
 ### Syncthing / Obsidian Sync
 
