@@ -28,7 +28,7 @@ task-maxxing has **three moving parts** and one **state file**.
 ```
                  ┌────────────────────┐
                  │   OBSIDIAN VAULT   │  <── You edit markdown here
-                 │   08-Tasks/*.md    │
+                 │   06-Tasks/*.md    │
                  │   .sync-state.json │
                  └──────┬─────────────┘
                         │
@@ -65,7 +65,7 @@ task-maxxing has **three moving parts** and one **state file**.
 
 ### The state file
 
-`.sync-state.json` lives at the root of your 08-Tasks mirror and holds everything the
+`.sync-state.json` lives at the root of your 06-Tasks mirror and holds everything the
 system needs to know about every task. It is the "glue" between the three apps —
 without it, no workflow can tell whether a row in Notion corresponds to an existing
 markdown task or a new one to be created.
@@ -76,7 +76,7 @@ updated by all of them. The schema is documented below.
 ### The daemon
 
 A small zero-dependency Node script (`src/auto-commit.js`) invoked by launchd on
-every markdown edit inside your vault's `08-Tasks/` directory. Its job is tiny and
+every markdown edit inside your vault's `06-Tasks/` directory. Its job is tiny and
 it runs as a **one-shot per tick** — no long-running file watcher, no chokidar:
 
 1. launchd fires the agent whenever a file under `WatchPaths` changes, subject to a
@@ -309,7 +309,7 @@ working copy and the mirror can be different).
   "tasks": {
     "a3f9d2c1b8e4f7a6d5c9e2b1": {
       "hash": "a3f9d2c1b8e4f7a6d5c9e2b1",
-      "sourceFile": "08-Tasks/TASKS-URGENT.md",
+      "sourceFile": "06-Tasks/TASKS-URGENT.md",
       "sourceLine": 12,
       "text": "Ship task-maxxing v0.1",
       "completed": false,

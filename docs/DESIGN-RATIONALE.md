@@ -156,7 +156,7 @@ and almost every other decision on this page is a consequence of it.
 - **Version control friendly.** Markdown + git = every sync produces a
   commit, every commit has an author and a message, every decision is
   auditable. If we wanted to know "why did this task get marked done at
-  17:54 UTC on Tuesday," `git log -p 08-Tasks/TASKS-URGENT.md` answers
+  17:54 UTC on Tuesday," `git log -p 06-Tasks/TASKS-URGENT.md` answers
   it in one shell command.
 - **User-editable without the sync running.** The user can fly on an
   airplane, open Obsidian, add 10 tasks to `TASKS-URGENT.md`, close the

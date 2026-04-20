@@ -69,7 +69,7 @@ The missing piece is **three-way sync with one canonical source**. `task-maxxing
 ### What you actually get
 
 - **Edit anywhere.** Check a task off in Morgen on your phone, it's checked in Notion and Obsidian inside a minute.
-- **One source of truth.** Your `.md` files in `08-Tasks/` are canonical. Notion and Morgen are regenerated mirrors — if they drift, the markdown wins.
+- **One source of truth.** Your `.md` files in `06-Tasks/` are canonical. Notion and Morgen are regenerated mirrors — if they drift, the markdown wins.
 - **Git-backed history.** Every task edit is a git commit. Time-travel, blame, diffs, the works.
 - **No vendor lock-in.** Turn the whole pipeline off tomorrow and your data is still a folder of markdown files.
 
@@ -82,7 +82,7 @@ Six directed edges, three workflows, one local daemon.
 ```
                         ┌───────────────────────┐
                         │  Obsidian (canonical) │
-                        │  08-Tasks/*.md        │
+                        │  06-Tasks/*.md        │
                         │  + .sync-state.json   │
                         └──────────┬────────────┘
                                    │
@@ -117,7 +117,7 @@ Six directed edges, three workflows, one local daemon.
 
 ### Daemon (local, macOS)
 
-A small Node process watches `08-Tasks/**/*.md`, debounces edits, and runs `git add && git commit && git push`. The daemon is the **only** part of the system that touches your local filesystem — all three n8n workflows talk to your vault through the GitHub API. This keeps n8n cloud out of your disk and lets W2 / W3 write back to markdown as regular commits.
+A small Node process watches `06-Tasks/**/*.md`, debounces edits, and runs `git add && git commit && git push`. The daemon is the **only** part of the system that touches your local filesystem — all three n8n workflows talk to your vault through the GitHub API. This keeps n8n cloud out of your disk and lets W2 / W3 write back to markdown as regular commits.
 
 > *(A note on "daemon" — as a non-technical builder, I get excited seeing the word "daemon" because, in my experience — correct me if I'm wrong — it just means something might happen automatically, behind-the-scenes, or fast. I'm probably a bit wrong in some way, but I **won't** look it up right now because I feel a deep sense of pride in this parenthetical sentence.)*
 
@@ -127,8 +127,8 @@ A small Node process watches `08-Tasks/**/*.md`, debounces edits, and runs `git 
 
 You'll need accounts (free tiers are fine for all of these except Morgen Pro):
 
-- **Obsidian vault** with a `08-Tasks/` folder (any structure — area files named `TASKS-*.md`)
-  - 👉 **Don't have a vault yet?** Use my [**2ndBrain-mogging**](https://github.com/lorecraft-io/2ndBrain-mogging) setup as your starting point. It's the best-of-5 different second-brain systems — I merged the good parts of Karpathy / Jens / eugeniu / AgriciDaniel / NicholasSpisak, cut the dead folders and redundant logic, and shipped what's left. Everything you want, everything you actually need, nothing you don't. `task-maxxing` drops straight into its `08-Tasks/` folder.
+- **Obsidian vault** with a `06-Tasks/` folder (any structure — area files named `TASKS-*.md`)
+  - 👉 **Don't have a vault yet?** Use my [**2ndBrain-mogging**](https://github.com/lorecraft-io/2ndBrain-mogging) setup as your starting point. It's the best-of-5 different second-brain systems — I merged the good parts of Karpathy / Jens / eugeniu / AgriciDaniel / NicholasSpisak, cut the dead folders and redundant logic, and shipped what's left. Everything you want, everything you actually need, nothing you don't. `task-maxxing` drops straight into its `06-Tasks/` folder.
 - **Notion workspace** + the ability to create an internal integration
 - **Morgen account** (Pro tier, for API access)
 - **n8n cloud** account (or self-hosted — you do you)
@@ -158,7 +158,7 @@ set -a; source .env; set +a
 
 # 4. Install the local daemon (wraps Node in a .app bundle + loads launchd)
 BUNDLE_ID=io.example.task-maxxing-daemon \
-WATCH_PATH="$HOME/path/to/your-vault/08-Tasks" \
+WATCH_PATH="$HOME/path/to/your-vault/06-Tasks" \
 SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
   bash daemon/install-daemon.sh
 # Then grant Full Disk Access to the printed .app bundle in System Settings.

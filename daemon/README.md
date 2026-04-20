@@ -1,6 +1,6 @@
 # task-maxxing daemon
 
-A macOS LaunchAgent that watches your Obsidian vault's `08-Tasks/` directory
+A macOS LaunchAgent that watches your Obsidian vault's `06-Tasks/` directory
 and auto-commits + pushes every change to a git remote. Used as the trigger
 for workflow W1 (Obsidian → Notion/Morgen).
 
@@ -30,7 +30,7 @@ This is what `install-daemon.sh` sets up for you.
 
 - macOS (launchd is a macOS feature).
 - Node 18+ in your PATH (or set `NODE_BIN=/absolute/path/to/node`).
-- A local git clone of your vault (the `08-Tasks` dir must be a git repo,
+- A local git clone of your vault (the `06-Tasks` dir must be a git repo,
   or be inside one).
 - A passwordless git remote. The daemon runs headless — it cannot answer
   SSH passphrase prompts. Use one of:
@@ -42,7 +42,7 @@ This is what `install-daemon.sh` sets up for you.
 
 ```bash
 BUNDLE_ID=io.example.task-maxxing-daemon \
-WATCH_PATH="$HOME/path/to/vault/08-Tasks" \
+WATCH_PATH="$HOME/path/to/vault/06-Tasks" \
 SCRIPT_PATH="$HOME/code/task-maxxing/src/auto-commit.js" \
   bash daemon/install-daemon.sh
 ```
@@ -52,7 +52,7 @@ Required env vars:
 | Variable      | Purpose                                                                |
 |---------------|------------------------------------------------------------------------|
 | `BUNDLE_ID`   | Reverse-DNS label for the launchd agent + Info.plist identifier.       |
-| `WATCH_PATH`  | Absolute path to the directory launchd should watch (your 08-Tasks).   |
+| `WATCH_PATH`  | Absolute path to the directory launchd should watch (your 06-Tasks).   |
 | `SCRIPT_PATH` | Absolute path to `src/auto-commit.js` from this repo clone.            |
 
 Optional env vars:

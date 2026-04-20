@@ -20,7 +20,7 @@
  *   TASK_MAXXING_BRANCH Branch to push (default: main)
  *
  * Manual run (for testing):
- *   TASK_MAXXING_REPO="$HOME/path/to/vault/08-Tasks" node src/auto-commit.js
+ *   TASK_MAXXING_REPO="$HOME/path/to/vault/06-Tasks" node src/auto-commit.js
  *
  * Exit codes:
  *   0  nothing to commit, or commit + push succeeded

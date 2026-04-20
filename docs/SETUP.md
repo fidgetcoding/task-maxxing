@@ -36,7 +36,7 @@ missing, circle back before continuing — the rest of the guide assumes they're
 
 **Accounts**
 
-- [ ] **Obsidian vault** with a `08-Tasks/` folder (at minimum, one `TASKS-URGENT.md` file)
+- [ ] **Obsidian vault** with a `06-Tasks/` folder (at minimum, one `TASKS-URGENT.md` file)
 - [ ] **Notion workspace** you own (personal or team, free tier is fine)
 - [ ] **Morgen** account (Pro tier needed for API access)
 - [ ] **n8n cloud** account OR a self-hosted n8n instance
@@ -95,10 +95,10 @@ The file is heavily commented — read the comments in the file directly. The
 canonical shape (matches `examples/sample-.env.example`) is:
 
 ```bash
-# Local vault — absolute path to the 08-Tasks directory inside your Obsidian
+# Local vault — absolute path to the 06-Tasks directory inside your Obsidian
 # vault (NOT the vault root — point at the dir that holds TASKS-*.md).
-VAULT_PATH=/absolute/path/to/your-vault/08-Tasks
-TASK_MAXXING_REPO=/absolute/path/to/your-vault/08-Tasks   # usually same value
+VAULT_PATH=/absolute/path/to/your-vault/06-Tasks
+TASK_MAXXING_REPO=/absolute/path/to/your-vault/06-Tasks   # usually same value
 
 # GitHub — split owner + repo name (easier for callers to concat than the
 # joined "owner/repo" form).
@@ -282,7 +282,7 @@ time.
 
 ## 8. Create the vault-mirror GitHub repo
 
-This is a *separate* repo from your vault. It's a tiny mirror of the `08-Tasks/`
+This is a *separate* repo from your vault. It's a tiny mirror of the `06-Tasks/`
 directory plus a `sync-state.json` file at the root. The daemon syncs it from your
 local vault; n8n reads and writes it via the GitHub API.
 
@@ -351,7 +351,7 @@ Check in your browser: the repo should now have a `README.md` and one commit.
 
 ## 9. Set up the local daemon
 
-The daemon watches your vault's `08-Tasks/` folder via launchd's `WatchPaths`, then
+The daemon watches your vault's `06-Tasks/` folder via launchd's `WatchPaths`, then
 runs `src/auto-commit.js` once per fire (with a 30-second throttle and a 5-minute
 heartbeat). The script stages, commits, and pushes any changes to the tasks mirror.
 It's a one-shot script per tick — no long-running file watcher — and it has zero
@@ -363,7 +363,7 @@ three environment variables (not from `.env`):
 | Variable      | Purpose                                                                |
 |---------------|------------------------------------------------------------------------|
 | `BUNDLE_ID`   | Reverse-DNS label for the LaunchAgent (e.g. `io.example.task-maxxing-daemon`). |
-| `WATCH_PATH`  | Absolute path to the `08-Tasks/` dir inside your vault. This MUST be a git working tree (`git init` it if needed) and its `origin` remote must point at the mirror repo you created in step 8. |
+| `WATCH_PATH`  | Absolute path to the `06-Tasks/` dir inside your vault. This MUST be a git working tree (`git init` it if needed) and its `origin` remote must point at the mirror repo you created in step 8. |
 | `SCRIPT_PATH` | Absolute path to `src/auto-commit.js` in this clone of task-maxxing.   |
 
 See `daemon/README.md` for the full list (optional `NODE_BIN`, `APP_SUPPORT_DIR`,
@@ -375,7 +375,7 @@ See `daemon/README.md` for the full list (optional `NODE_BIN`, `APP_SUPPORT_DIR`
 cd ~/Desktop/task-maxxing   # back into the cloned repo
 
 BUNDLE_ID=io.example.task-maxxing-daemon \
-WATCH_PATH="$HOME/path/to/your-vault/08-Tasks" \
+WATCH_PATH="$HOME/path/to/your-vault/06-Tasks" \
 SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
   bash daemon/install-daemon.sh
 ```
@@ -404,7 +404,7 @@ will log `FATAL: cannot read …/.git/HEAD` on every tick. That's expected.
 If you skip this step, you will see the most common failure mode:
 
 ```
-FATAL: EPERM: operation not permitted, open '/Users/you/Desktop/.../08-Tasks/...'
+FATAL: EPERM: operation not permitted, open '/Users/you/Desktop/.../06-Tasks/...'
 ```
 
 macOS sandbox policy blocks reading *anything* in `~/Desktop`, `~/Documents`,
@@ -471,13 +471,13 @@ list) are:
 | `--verbose`, `-v`   | Log every API call.                                              |
 
 The backfill only touches Morgen and `.sync-state.json`. Notion backfilling happens
-automatically on the first W1 run (from `08-Tasks/**/*.md` + the seeded state).
+automatically on the first W1 run (from `06-Tasks/**/*.md` + the seeded state).
 
 **Preview first:**
 
 ```bash
 cd ~/Desktop/task-maxxing
-VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
   node scripts/morgen-backfill.js --dry-run
 ```
 
@@ -487,7 +487,7 @@ and a `dry run complete — no API calls were made` footer.
 If the numbers look right, drop `--dry-run` and run for real:
 
 ```bash
-VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
 MORGEN_API_KEY=ntn_...replace... \
   node scripts/morgen-backfill.js
 ```
@@ -625,7 +625,7 @@ Four scenarios. Run them in order. You should be able to feel the system working
 
 ### Scenario 1: Create in Obsidian → appears in Notion + Morgen
 
-1. In your vault, open `08-Tasks/TASKS-URGENT.md`.
+1. In your vault, open `06-Tasks/TASKS-URGENT.md`.
 2. Add a new line: `- [ ] task-maxxing smoke test 📅 2099-12-31 ⏫`.
 3. Save.
 4. Wait 60 seconds.

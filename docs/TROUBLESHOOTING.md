@@ -30,7 +30,7 @@ the last 50 lines of the relevant n8n execution log.
 **Symptom**
 
 ```
-[daemon] FATAL: EPERM: operation not permitted, open '/Users/you/.../08-Tasks/TASKS-URGENT.md'
+[daemon] FATAL: EPERM: operation not permitted, open '/Users/you/.../06-Tasks/TASKS-URGENT.md'
 ```
 
 or
@@ -130,7 +130,7 @@ If you're in the middle of a backfill:
    default behavior:
 
    ```bash
-   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
      node scripts/morgen-backfill.js
    ```
 
@@ -139,7 +139,7 @@ If you're in the middle of a backfill:
    until all tasks have an ID:
 
    ```bash
-   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
      node scripts/morgen-backfill.js --max-points 50
    ```
 
@@ -246,7 +246,7 @@ updated `.sync-state.json`, and the next W1 push will see a smaller delta becaus
 Morgen IDs are already mapped:
 
 ```bash
-VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
   node scripts/morgen-backfill.js
 # …then commit .sync-state.json and push so n8n W1 sees the update.
 ```
@@ -308,9 +308,9 @@ Morgen sides manually.
    and write a brand-new `.sync-state.json`:
 
    ```bash
-   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
      node scripts/morgen-backfill.js --dry-run   # preview
-   VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
      node scripts/morgen-backfill.js             # live
    ```
 
@@ -416,7 +416,7 @@ node -e '
   s._tagCache = {};
   fs.writeFileSync(p, JSON.stringify(s, null, 2));
 ' "$VAULT_PATH/.sync-state.json"
-VAULT_PATH="$HOME/path/to/your-vault/08-Tasks" \
+VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
   node scripts/morgen-backfill.js
 ```
 
@@ -542,7 +542,7 @@ git status
 Then trigger a manual sync test:
 
 ```bash
-touch ~/{{VAULT_PATH}}/08-Tasks/TASKS-URGENT.md
+touch ~/{{VAULT_PATH}}/06-Tasks/TASKS-URGENT.md
 tail -5 ~/Library/Logs/task-maxxing-daemon.log
 ```
 

@@ -16,8 +16,8 @@
  *   - n8n Workflow 1 (Obsidian-Git-Task-Sync) — inlined
  *   - n8n Workflow 2 (Morgen-Task-Completion-Sync) — inlined
  *   - n8n Workflow 3 (Notion-Done-To-Obsidian-Sync) — inlined
- *   - 08-Tasks/scripts/morgen-backfill.js — via require
- *   - 08-Tasks/scripts/sync-e2e-tests.js — via require
+ *   - 06-Tasks/scripts/morgen-backfill.js — via require
+ *   - 06-Tasks/scripts/sync-e2e-tests.js — via require
  */
 
 'use strict';
@@ -97,7 +97,7 @@ const NOTION_AREAS = Object.freeze({
 const NOTION_AREA_TO_KEY = Object.freeze(
   Object.fromEntries(Object.entries(NOTION_AREAS).map(([k, v]) => [v, k]))
 );
-// Area key → source file path (relative to repo root, which is also 08-Tasks dir)
+// Area key → source file path (relative to repo root, which is also 06-Tasks dir)
 const AREA_TO_FILE = Object.freeze({
   URGENT: 'TASKS-URGENT.md',
   GENERAL: 'TASKS-GENERAL.md',
@@ -125,7 +125,7 @@ function parseArea(sourceFilePath) {
   if (sourceFilePath == null) return 'GENERAL';
   const raw = String(sourceFilePath);
   if (!raw) return 'GENERAL';
-  const p = raw.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^08-Tasks\//, '');
+  const p = raw.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^06-Tasks\//, '');
 
   // FIDGETCODING subareas (check before the parent hub)
   if (/(^|\/)FIDGETCODING\/content\//.test(p)) return 'FIDGETCODING-CONTENT';
@@ -155,7 +155,7 @@ function notionLabelToAreaKey(label) {
   if (label == null) return 'GENERAL';
   return NOTION_AREA_TO_KEY[label] || 'GENERAL';
 }
-/** Internal area key → relative source file path (no 08-Tasks/ prefix) */
+/** Internal area key → relative source file path (no 06-Tasks/ prefix) */
 function areaKeyToFile(key) {
   return AREA_TO_FILE[key] || AREA_TO_FILE.GENERAL;
 }
@@ -240,8 +240,8 @@ const SAFE_PATH_RE = /^(TASKS-(URGENT|GENERAL|LORECRAFT|BLOOM|CART-BLANCHE|LAVA-
 function isSafePath(p) {
   if (typeof p !== 'string') return false;
   if (p.includes('..') || p.includes('\\') || p.startsWith('/')) return false;
-  // Accept with or without 08-Tasks/ prefix
-  const normalized = p.replace(/^08-Tasks\//, '');
+  // Accept with or without 06-Tasks/ prefix
+  const normalized = p.replace(/^06-Tasks\//, '');
   return SAFE_PATH_RE.test(normalized);
 }
 
@@ -392,7 +392,7 @@ function parseObsidianTasks(markdown, sourceFilePath) {
 
   const lines = text.split('\n');
   const area = parseArea(sourceFilePath);
-  const sourceFile = sourceFilePath == null ? '' : String(sourceFilePath).replace(/^08-Tasks\//, '');
+  const sourceFile = sourceFilePath == null ? '' : String(sourceFilePath).replace(/^06-Tasks\//, '');
 
   let inFence = false;
   let fenceMarker = null;
@@ -455,7 +455,7 @@ function parseObsidianTasks(markdown, sourceFilePath) {
 //   "entries": {
 //     "<taskHash>": {
 //       "hash": "<24hex>",
-//       "sourceFile": "TASKS-URGENT.md",    // relative, no 08-Tasks/ prefix
+//       "sourceFile": "TASKS-URGENT.md",    // relative, no 06-Tasks/ prefix
 //       "lineNo": 17,
 //       "lineHash": "<16hex>",              // computeLineHash of rawLine
 //       "text": "...",

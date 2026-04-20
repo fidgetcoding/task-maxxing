@@ -23,7 +23,7 @@ accordingly.
 | `Due`           | date         | Obsidian `📅 YYYY-MM-DD` — bare date only.                             |
 | `Scheduled`     | date         | Obsidian `⏳ YYYY-MM-DD` — bare date only.                             |
 | `Parent Task`   | rich_text    | Optional: the hash of the parent task for subtasks. Free-text.         |
-| `Source File`   | rich_text    | Relative path inside your 08-Tasks dir (e.g. `TASKS-URGENT.md`).       |
+| `Source File`   | rich_text    | Relative path inside your 06-Tasks dir (e.g. `TASKS-URGENT.md`).       |
 | `Hash`          | rich_text    | 24-char SHA-256 prefix computed by `computeTaskHash()`. Dedup anchor.  |
 | `Last Synced`   | date         | ISO-8601 timestamp last touched by any workflow.                       |
 

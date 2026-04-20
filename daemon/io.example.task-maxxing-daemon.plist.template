@@ -8,7 +8,7 @@
     {{NODE_APP_PATH}}   absolute path to the .app bundle's Contents/MacOS binary
                         that wraps your Node binary (see daemon/README.md, Plan B)
     {{SCRIPT_PATH}}     absolute path to src/auto-commit.js (the daemon script)
-    {{WATCH_PATH}}      absolute path to your Obsidian vault's 08-Tasks dir
+    {{WATCH_PATH}}      absolute path to your Obsidian vault's 06-Tasks dir
     {{LOG_STDOUT}}      absolute path for launchd stdout log
     {{LOG_STDERR}}      absolute path for launchd stderr log
     {{HOME}}            the installing user's home dir
