@@ -12,6 +12,9 @@
 
 </div>
 
+> [!WARNING]
+> **Prerequisite — [`2ndBrain-mogging`](https://github.com/lorecraft-io/2ndBrain-mogging) must be installed and running first.** task-maxxing syncs the `06-Tasks/` folder of that vault — if the vault isn't there, this kit has nothing to sync. Don't clone this repo until 2ndBrain-mogging is live.
+
 ---
 
 ## Quick Navigation
