@@ -320,3 +320,5 @@ MIT — see [LICENSE](LICENSE).
 Built by **Nate Davidovich** ([lorecraft-io](https://github.com/lorecraft-io)) after a few too many hours wondering why nobody else had shipped a working three-way task sync. This is the reference implementation that powers my personal 2ndBrain vault.
 
 If you ship a port (Linux daemon, Windows service, Todoist replacement, etc.), open a PR and I'll link it from here.
+
+[⤴ back to top](#top)
