@@ -30,6 +30,8 @@
 | [What's in the box](#whats-in-the-box) | Reference | Repo file-tree tour | ~1 min |
 | [Status](#status) | Meta | Alpha — running on my vault, looking for testers | ~1 min |
 | [Known quirks](#known-quirks) | Reference | macOS-only daemon, Morgen inbox-only, rate budget | ~1 min |
+| [Using these tools outside the sync](#using-these-tools-outside-the-sync) | Reference | Optional Morgen / Notion MCPs + Obsidian download | ~1 min |
+| [The maxxing series](#the-maxxing-series) | Meta | Sibling repos: cli-maxxing + creativity-maxxing | — |
 | [License](#license) | Meta | MIT | — |
 | [Credits](#credits) | Meta | Built by Nate Davidovich | — |
 
@@ -236,6 +238,40 @@ Open an issue or a discussion if you try it. Bug reports with `.sync-state.json`
 - **Morgen "inbox" task list only.** Morgen's API doesn't yet expose task-list management, so everything lands in your default inbox list.
 - **Morgen task-to-calendar promotion is unavailable** via API. You'll still drag tasks onto the calendar in Morgen's UI (or lean on Morgen's auto-scheduler).
 - **Rate budget:** W1 is capped at ~100 Notion ops and ~100 Morgen ops per run to stay inside Notion's 3 req/s and Morgen's 300 points / 15 min.
+
+---
+
+## Using these tools outside the sync
+
+None of these are required for the three-way sync — W1/W2/W3 talk to Notion and Morgen with direct API tokens through n8n, no MCPs involved. But if you landed here cold and want to actually *talk* to these tools from Claude Code (add a task from the terminal, query your Notion DB, open your vault), here's the optional add-on layer:
+
+- **Morgen MCP** — my unofficial MCP for Morgen.
+  ```bash
+  claude mcp add morgen -- npx -y fidgetcoding-morgen-mcp
+  ```
+  Lets Claude Code create / update / reflow Morgen tasks and events from the CLI. Repo: [`lorecraft-io/morgen-mcp`](https://github.com/lorecraft-io/morgen-mcp).
+- **Notion MCP** — the official Notion MCP server.
+  ```bash
+  claude mcp add --transport http notion https://mcp.notion.com/mcp
+  ```
+  Or see [developers.notion.com/docs/mcp](https://developers.notion.com/docs/mcp) for the local-stdio + OAuth variants.
+- **Obsidian** — the app itself. Download at [obsidian.md](https://obsidian.md). Pair it with the [Obsidian Tasks plugin](https://publish.obsidian.md/tasks/) (Clare Macrae) — that's the plugin whose syntax `task-maxxing` parses.
+
+If you want all of this pre-wired alongside Claude Code, shell aliases, and a dozen other productivity MCPs, [`cli-maxxing`](https://github.com/lorecraft-io/cli-maxxing) is the one-shot installer.
+
+---
+
+## The maxxing series
+
+This is one of three repos in the stack:
+
+| Repo | What it does |
+|------|-------------|
+| [`cli-maxxing`](https://github.com/lorecraft-io/cli-maxxing) | Foundation — Claude Code, shell aliases, dev tools, productivity MCPs (Morgen, Motion, n8n, Notion, Playwright, SwiftKit). |
+| [`creativity-maxxing`](https://github.com/lorecraft-io/creativity-maxxing) | Design skills, video prompt engines, transcription lab, Canva in terminal. |
+| **`task-maxxing`** | **This repo** — three-way task sync, Obsidian ↔ Notion ↔ Morgen. |
+
+Install `cli-maxxing` first (it drops `claude` onto your `PATH`). After that, `creativity-maxxing` and `task-maxxing` can be installed in either order.
 
 ---
 
