@@ -13,6 +13,12 @@ secrets.json
 # Local sync state (generated at runtime, not part of the template)
 .sync-state.json
 
+# Installer tmp artifacts — these contain substituted secrets in transit
+# and should never land in the repo even if someone runs the installer
+# with a non-standard TMPDIR that points at this tree.
+*.rendered.json
+*.clean.json
+
 # Node / JavaScript
 node_modules/
 npm-debug.log*

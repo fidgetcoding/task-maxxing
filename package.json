@@ -14,6 +14,8 @@
     "test:helpers": "node scripts/test-helpers.js",
     "validate:state": "node scripts/validate-sync-state.js",
     "validate:workflows": "node scripts/validate-workflows.js",
+    "install:workflows": "./scripts/install-workflows.sh",
+    "backfill:morgen": "node scripts/morgen-backfill.js",
     "lint": "echo 'No linter configured yet'"
   }
 }

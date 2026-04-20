@@ -60,6 +60,10 @@ const PLACEHOLDER_ALLOWED_PATHS = [
   // — the `.value` leaf is where the placeholder lives.
   /\.parameters\.owner(\..*)?$/,
   /\.parameters\.repository(\..*)?$/,
+  // executeWorkflow node: sub-workflow IDs are templated as
+  // `{ __rl: true, value: "{{W1_WORKFLOW_ID}}", mode: "id" }` and the
+  // installer substitutes them after capturing real IDs from the n8n POST.
+  /\.parameters\.workflowId(\..*)?$/,
 ];
 
 function isAllowedPlaceholderPath(p) {

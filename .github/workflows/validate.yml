@@ -44,3 +44,39 @@ jobs:
             exit 1
           fi
           echo "No hardcoded tokens found"
+
+      - name: bash -n syntax check (all scripts)
+        run: |
+          set -e
+          for f in scripts/*.sh daemon/*.sh; do
+            [ -f "$f" ] || continue
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: shellcheck (scripts/ + daemon/)
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # v2.0.0
+        with:
+          severity: warning
+          scandir: './scripts'
+
+      - name: node --check on JS scripts
+        run: |
+          set -e
+          for f in scripts/*.js; do
+            [ -f "$f" ] || continue
+            node --check "$f"
+          done
+
+      - name: install-workflows DRY_RUN smoke
+        env:
+          DRY_RUN: '1'
+          GITHUB_TOKEN: fake_gh
+          NOTION_TOKEN: fake_ntn
+          MORGEN_KEY: fake_mg
+          NOTION_DATABASE_ID: 00000000-0000-0000-0000-000000000000
+          GITHUB_REPO_OWNER: example
+          GITHUB_REPO_NAME: example-tasks
+          N8N_API_KEY: fake_n8n
+          N8N_BASE_URL: https://example.app.n8n.cloud
+        run: ./scripts/install-workflows.sh

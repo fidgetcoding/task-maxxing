@@ -12,25 +12,53 @@
 #   GITHUB_TOKEN          OAuth/PAT used by W1/W3 (fine-grained PAT ok)
 #   NOTION_TOKEN          Notion internal integration token ("ntn_…")
 #   MORGEN_KEY            Morgen API key (used as "ApiKey <key>")
-#   NOTION_DATABASE_ID    Target Notion database ID (with or without dashes)
+#   NOTION_DATABASE_ID    Target Notion database ID (with or without dashes).
 #   GITHUB_REPO_OWNER     The GitHub user/org that owns the task-mirror repo
 #   GITHUB_REPO_NAME      The name of the task-mirror repo
 #   N8N_API_KEY           Your n8n public API key
+#   N8N_BASE_URL          Your n8n instance base URL
+#                         (e.g. https://your-tenant.app.n8n.cloud)
 #
 # Back-compat shim:
 #   GITHUB_REPO           "<owner>/<repo>" — if set instead of the split pair
 #                         above, the script will split on '/' for you.
 #
-# Optional env vars:
-#   N8N_BASE_URL          Your n8n instance base URL (no default — must be set)
-#   DRY_RUN=1             Render substituted JSON to /tmp, do not POST
-#   SKIP_ORCHESTRATOR=1   Only import W1/W2/W3 (advanced — you're wiring your
-#                         own scheduling and accept that W1/W2/W3 can race)
+# Optional knobs:
+#   DRY_RUN=1             Render substituted JSON to $TMPDIR, do not POST.
+#   SKIP_ORCHESTRATOR=1   Only import W1/W2/W3 (advanced — you're wiring
+#                         your own scheduling and accept that W1/W2/W3 can
+#                         race on .sync-state.json).
 #
 # After import, activate ONLY the W0-Sync-Orchestrator in the n8n UI.
 # Leave W1/W2/W3 inactive — the orchestrator calls them directly.
+#
+# ⚠️  Not idempotent.  n8n's POST /workflows endpoint creates a NEW workflow
+# on every call (no upsert by name). Re-running this script doubles your
+# workflow set. If you need to re-import, delete the previous W0/W1/W2/W3
+# in the n8n UI first.
 
 set -euo pipefail
+
+# Rollback hint on mid-run failure.  We start with an empty array so the trap
+# is safe to fire before the import loop begins.
+declare -a CREATED_IDS=()
+declare -a CREATED_NAMES=()
+
+cleanup_on_error() {
+  local rc=$?
+  if [[ ${#CREATED_IDS[@]} -gt 0 && "${DRY_RUN:-0}" != "1" ]]; then
+    echo >&2
+    echo "[install-workflows] FAILED mid-install. Workflows created so far:" >&2
+    for i in "${!CREATED_IDS[@]}"; do
+      printf '  %s (%s)\n' "${CREATED_IDS[$i]}" "${CREATED_NAMES[$i]:-?}" >&2
+    done
+    echo "[install-workflows] To roll back each one:" >&2
+    echo "  curl -X DELETE -H \"X-N8N-API-KEY: \$N8N_API_KEY\" \\" >&2
+    echo "    \"\$N8N_BASE_URL/api/v1/workflows/<ID>\"" >&2
+  fi
+  exit "${rc}"
+}
+trap cleanup_on_error ERR
 
 : "${GITHUB_TOKEN:?GITHUB_TOKEN env var required}"
 : "${NOTION_TOKEN:?NOTION_TOKEN env var required}"
@@ -90,8 +118,8 @@ GH_REPO_E="$(escape_sed "${GITHUB_REPO}")"
 GH_OWNER_E="$(escape_sed "${GITHUB_OWNER}")"
 GH_REPO_NAME_E="$(escape_sed "${GITHUB_REPO_NAME}")"
 
-declare -a CREATED_IDS=()
-declare -a CREATED_NAMES=()
+# CREATED_IDS + CREATED_NAMES declared at top so the ERR trap can see them
+# before the first import succeeds.
 
 for pair in "${WORKFLOWS[@]}"; do
   label="${pair%%:*}"
@@ -111,7 +139,6 @@ for pair in "${WORKFLOWS[@]}"; do
     -e "s|{{NOTION_TOKEN}}|${NOTION_E}|g" \
     -e "s|{{MORGEN_KEY}}|${MORGEN_E}|g" \
     -e "s|{{NOTION_DATABASE_ID}}|${NOTION_DB_E}|g" \
-    -e "s|{{NOTION_DB_ID}}|${NOTION_DB_E}|g" \
     -e "s|{{GITHUB_REPO}}|${GH_REPO_E}|g" \
     -e "s|{{GITHUB_OWNER}}|${GH_OWNER_E}|g" \
     -e "s|{{GITHUB_REPO_NAME}}|${GH_REPO_NAME_E}|g" \
@@ -228,6 +255,16 @@ else
   WORKFLOWS+=("W0:W0-orchestrator-sync-sequencer.json")
 fi
 
+# Derive the orchestrator's display name from its JSON so we stay honest if
+# someone renames it in-place — no hardcoded magic string in the banner.
+ORCH_NAME_DEFAULT="W0-Sync-Orchestrator"
+if [[ "${SKIP_ORCHESTRATOR}" != "1" && -f "${WF_DIR}/W0-orchestrator-sync-sequencer.json" ]]; then
+  ORCH_NAME="$(jq -r '.name // empty' "${WF_DIR}/W0-orchestrator-sync-sequencer.json" 2>/dev/null)"
+  ORCH_NAME="${ORCH_NAME:-${ORCH_NAME_DEFAULT}}"
+else
+  ORCH_NAME="${ORCH_NAME_DEFAULT}"
+fi
+
 echo
 echo "====================================================================="
 echo "  Workflows created:"
@@ -241,9 +278,14 @@ if [[ "${SKIP_ORCHESTRATOR}" == "1" ]]; then
   echo "  schedule triggers. Activate them in this order:  W1 → W3 → W2"
   echo "  (W1 is the fast push-based path, W3 guards Notion edits, W2 sweeps Morgen.)"
 else
-  echo "  NEXT: activate ONLY the W0-Sync-Orchestrator in the n8n UI."
+  echo "  NEXT: activate ONLY the ${ORCH_NAME} in the n8n UI."
   echo "  Leave W1/W2/W3 inactive — the orchestrator triggers them directly"
   echo "  via executeWorkflow so they never race each other on the shared"
   echo "  .sync-state.json file."
 fi
+echo
+echo "  ⚠️  Re-running this script creates DUPLICATE workflows — n8n's API"
+echo "  does not upsert by name. If you need to reinstall, delete the"
+echo "  existing W0/W1/W2/W3 in the n8n UI (or via DELETE /api/v1/workflows/<id>)"
+echo "  before running again, or you will end up with two copies of each."
 echo "====================================================================="
