@@ -79,7 +79,7 @@ The missing piece is **three-way sync with one canonical source**. `task-maxxing
 
 ## Architecture
 
-Six directed edges, three workflows, one local daemon.
+Six directed edges, three sub-workflows, one orchestrator, one local daemon.
 
 ```
                         ┌───────────────────────┐
@@ -90,10 +90,10 @@ Six directed edges, three workflows, one local daemon.
                                    │
               ┌────────────────────┼─────────────────────┐
               │ local daemon       │ W1 (n8n)            │
-              │ watches files,     │ git push →          │
-              │ git commit,        │ Notion create/      │
-              │ git push           │ update + Morgen     │
-              │                    │ create/update       │
+              │ watches files,     │ git push webhook    │
+              │ git commit,        │  ─or─ called by W0  │
+              │ git push           │ → Notion + Morgen   │
+              │                    │                     │
               ▼                    ▼                     │
       ┌──────────────┐    ┌──────────────┐               │
       │  GitHub      │    │   Notion     │◄──────────────┤
@@ -107,15 +107,24 @@ Six directed edges, three workflows, one local daemon.
                         │  Tasks (inbox│   W2 (n8n)
                         │  list only)  │   closed → Obsidian
                         └──────────────┘   (commit back)
+
+            ┌──────────────────────────────────────────┐
+            │  W0 — Sync Orchestrator (every 15 min)   │
+            │  executeWorkflow W2 → W3 → W1, wait=true │
+            │  The ONLY workflow you activate.         │
+            └──────────────────────────────────────────┘
 ```
 
 ### Workflow glossary
 
-| Label | Direction                          | Trigger             | What it does                                                                     |
-|-------|------------------------------------|---------------------|----------------------------------------------------------------------------------|
-| **W1**| Obsidian → Notion + Morgen         | GitHub push webhook | Parses changed `TASKS-*.md` files, creates / updates / archives rows in Notion, creates / updates / closes tasks in Morgen. |
-| **W2**| Morgen → Obsidian                  | 60s cron            | Polls Morgen tasks. On a `closed` task, commits `- [x]` back to the source markdown file. |
-| **W3**| Notion → Obsidian                  | 60s cron            | Polls Notion for rows where Status changed to Done or Due/Scheduled changed. Commits the change back to the source markdown file. |
+| Label | Direction                          | Trigger                     | What it does                                                                     |
+|-------|------------------------------------|-----------------------------|----------------------------------------------------------------------------------|
+| **W0**| *meta*                             | Schedule (every 15 min)     | **The orchestrator.** Runs W2 → W3 → W1 in sequence via `executeWorkflow` (wait=true). This is the *only* workflow you activate — it serializes the other three so they never race on `.sync-state.json`. |
+| **W1**| Obsidian → Notion + Morgen         | GitHub push (+ called by W0) | Parses changed `TASKS-*.md` files, creates / updates / archives rows in Notion, creates / updates / closes tasks in Morgen. |
+| **W2**| Morgen → Obsidian                  | Called by W0                | Polls Morgen tasks. On a `closed` task, commits `- [x]` back to the source markdown file. |
+| **W3**| Notion → Obsidian                  | Called by W0                | Polls Notion for rows where Status changed to Done or Due/Scheduled changed. Commits the change back to the source markdown file. |
+
+> **Why an orchestrator?** Three independent 15-min cron triggers race each other and can interleave commits — W1 mid-run clobbers a `.sync-state.json` update from W2, or vice versa. The orchestrator sequences `pull from Morgen → pull from Notion → push merged state to both` so the state file mutates serially. If you really want the un-sequenced version (e.g. you're self-hosting and have your own scheduling), pass `SKIP_ORCHESTRATOR=1` to the installer and leave W1/W2/W3's own triggers active.
 
 ### Daemon (local, macOS)
 
@@ -170,11 +179,22 @@ SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
 node scripts/morgen-backfill.js --dry-run       # preview
 node scripts/morgen-backfill.js                 # live
 
-# 6. Import n8n workflows (DRY_RUN=1 to preview)
+# 6. Import n8n workflows — W1/W2/W3 + the W0 orchestrator, with IDs
+#    auto-templated into W0 after W1/W2/W3 are created.
+#    (DRY_RUN=1 to preview, SKIP_ORCHESTRATOR=1 to import W1/W2/W3 only.)
 ./scripts/install-workflows.sh
 
-# 7. Activate W1, W3, then W2 in the n8n UI
-# 8. Smoke test — see docs/SETUP.md section 14
+# 7. Activate ONLY the W0-Sync-Orchestrator in the n8n UI.
+#    Leave W1/W2/W3 inactive — W0 calls them directly, in sequence, every 15 min.
+
+# 8. (Optional) Wire the n8n MCP to Claude Code so you can manage workflows
+#    from the terminal. Your N8N_API_KEY + N8N_BASE_URL are already in .env.
+claude mcp add n8n-mcp \
+  --env N8N_API_URL="${N8N_BASE_URL}/api/v1" \
+  --env N8N_API_KEY="${N8N_API_KEY}" \
+  -- npx -y n8n-mcp
+
+# 9. Smoke test — see docs/SETUP.md section 14
 ```
 
 Full walkthrough with every click: **[docs/SETUP.md](docs/SETUP.md)**.
@@ -201,9 +221,10 @@ task-maxxing/
 │   └── README.md          FDA walkthrough + troubleshooting for the daemon
 ├── workflows/
 │   ├── README.md               Import-order notes + placeholder reference
-│   ├── W1-obsidian-git-task-sync.json     n8n export
-│   ├── W2-morgen-task-completion-sync.json
-│   └── W3-notion-done-to-obsidian-sync.json
+│   ├── W0-orchestrator-sync-sequencer.json  Sequences W2 → W3 → W1 every 15 min
+│   ├── W1-obsidian-git-task-sync.json       n8n export (called by W0)
+│   ├── W2-morgen-task-completion-sync.json  n8n export (called by W0)
+│   └── W3-notion-done-to-obsidian-sync.json n8n export (called by W0)
 ├── notion/
 │   └── tasks-db-schema.md Copy-pasteable database schema for Notion
 ├── scripts/
@@ -255,6 +276,13 @@ None of these are required for the three-way sync — W1/W2/W3 talk to Notion an
   claude mcp add --transport http notion https://mcp.notion.com/mcp
   ```
   Or see [developers.notion.com/docs/mcp](https://developers.notion.com/docs/mcp) for the local-stdio + OAuth variants.
+- **n8n MCP** — manage the sync workflows from Claude Code after they're installed. Step 8 of the [Quickstart](#quickstart) wires this up with the same `N8N_API_KEY` / `N8N_BASE_URL` the installer already uses:
+  ```bash
+  claude mcp add n8n-mcp \
+    --env N8N_API_URL="${N8N_BASE_URL}/api/v1" \
+    --env N8N_API_KEY="${N8N_API_KEY}" \
+    -- npx -y n8n-mcp
+  ```
 - **Obsidian** — the app itself. Download at [obsidian.md](https://obsidian.md). Pair it with the [Obsidian Tasks plugin](https://publish.obsidian.md/tasks/) (Clare Macrae) — that's the plugin whose syntax `task-maxxing` parses.
 
 If you want all of this pre-wired alongside Claude Code, shell aliases, and a dozen other productivity MCPs, [`cli-maxxing`](https://github.com/lorecraft-io/cli-maxxing) is the one-shot installer.
