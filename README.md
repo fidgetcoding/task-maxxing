@@ -8,9 +8,6 @@
 
 **Two-way task sync between Obsidian and Morgen — a DIY kit.**
 
-> [!NOTE]
-> **2026-05-04 cutover:** Notion was dropped from this kit. The maintained pipeline is now **Obsidian ↔ Morgen** two-way. The W3 (Notion → Obsidian) workflow has been removed and W1 no longer touches the Notion API. If you cloned the kit before this date and want the original three-way mode, pin to a commit on `main` before this banner. References to Notion still appear in some doc files (ARCHITECTURE.md, DESIGN-RATIONALE.md, etc.) — those sections are kept as historical context but the working code is now two-way.
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 [![Follow on X](https://img.shields.io/badge/FOLLOW%20%40fidgetcoding-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/fidgetcoding) [![LinkedIn](https://img.shields.io/badge/LINKEDIN-CONNECT-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white&labelColor=555555)](https://www.linkedin.com/in/nate-davidovich/) [![YouTube](https://img.shields.io/badge/YOUTUBE-SUBSCRIBE-FF0000?style=for-the-badge&logo=youtube&logoColor=white&labelColor=555555)](https://youtube.com/@fidgetcoding) [![Instagram](https://img.shields.io/badge/INSTAGRAM-FOLLOW-E4405F?style=for-the-badge&logo=instagram&logoColor=white&labelColor=555555)](https://instagram.com/fidgetcoding)
@@ -19,6 +16,9 @@
 
 > [!WARNING]
 > **Prerequisite — [`2ndBrain-mogging`](https://github.com/lorecraft-io/2ndBrain-mogging) must be installed and running first.** task-maxxing syncs the `06-Tasks/` folder of that vault — if the vault isn't there, this kit has nothing to sync. Don't clone this repo until 2ndBrain-mogging is live.
+
+> [!NOTE]
+> **2026-05-04 cutover:** Notion was dropped from this kit. The maintained pipeline is now **Obsidian ↔ Morgen** two-way. The W3 (Notion → Obsidian) workflow has been removed and W1 no longer touches the Notion API. If you cloned the kit before this date and want the original three-way mode, pin to a commit on `main` before this banner. References to Notion still appear in some doc files (ARCHITECTURE.md, DESIGN-RATIONALE.md, etc.) — those sections are kept as historical context but the working code is now two-way.
 
 ---
 
