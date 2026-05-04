@@ -135,9 +135,9 @@ Bidirectional. Edit anywhere; it converges everywhere. Two sub-workflows, one or
 
 > **Why an orchestrator?** Two independent cron triggers can race each other and interleave commits — W1 mid-run clobbers a `.sync-state.json` update from W2, or vice versa. The orchestrator sequences `pull from Morgen → push merged state out` so the state file mutates serially. If you really want the un-sequenced version (e.g. you're self-hosting and have your own scheduling), pass `SKIP_ORCHESTRATOR=1` to the installer and leave W1/W2's own triggers active.
 >
-> **Trade-off: W1 is no longer push-instant.** In the default install, you leave W1 inactive so only W0 can fire it — which means an edit to `06-Tasks/` propagates on the next 15-min tick, not on the next `git push`. If you want instant push→Morgen, either (a) activate W1 alongside W0 and accept occasional double-fires (n8n handles duplicate work cheaply because the jsCode is diff-aware), or (b) use `SKIP_ORCHESTRATOR=1` and run bare W1/W2 with their own triggers.
+> **Trade-off: W1 is no longer push-instant.** In the default install, you leave W1 inactive so only W0 can fire it — which means an edit to `06-Tasks/` propagates on the next 20-min tick, not on the next `git push`. If you want instant push→Morgen, either (a) activate W1 alongside W0 and accept occasional double-fires (n8n handles duplicate work cheaply because the jsCode is diff-aware), or (b) use `SKIP_ORCHESTRATOR=1` and run bare W1/W2 with their own triggers.
 >
-> **Known quirk: W0 self-overlap.** n8n's schedule triggers don't skip-if-running. If a 15-min tick lands while the previous W0 is still executing (possible during a large backfill), the second W0 queues up and starts immediately after — which re-introduces the very race W0 was built to prevent. In practice a full W2+W1 cycle finishes in well under 60 seconds, so the overlap window is tiny. If you see it, bump W0 to every 30 min.
+> **Known quirk: W0 self-overlap.** n8n's schedule triggers don't skip-if-running. If a 20-min tick lands while the previous W0 is still executing (possible during a large backfill), the second W0 queues up and starts immediately after — which re-introduces the very race W0 was built to prevent. In practice a full W2+W1 cycle finishes in well under 60 seconds, so the overlap window is tiny. If you see it, bump W0 to every 30 min.
 
 ### Daemon (local, macOS)
 
@@ -266,8 +266,8 @@ Open an issue or a discussion if you try it. Bug reports with `.sync-state.json`
 - **macOS only** for the daemon (launchd). Linux / Windows users need to port it.
 - **Morgen "inbox" task list only.** Morgen's API doesn't yet expose task-list management, so everything lands in your default inbox list.
 - **Morgen task-to-calendar promotion is unavailable** via API. You'll still drag tasks onto the calendar in Morgen's UI (or lean on Morgen's auto-scheduler).
-- **Rate budget:** W1 is capped at ~100 Morgen ops per run to stay inside Morgen's 300 points / 15 min. Because W0 fires W2 + W1 serially on every 20-min tick, plan your ops budget against the *cumulative* per-15-min total (W2 + W1 combined) — not W1 in isolation. A fresh backfill that touches 300+ tasks will blow past the Morgen budget; pre-stage via `scripts/morgen-backfill.js` instead.
-- **Existing users with a `W2-3-1-Sync-Orchestrator`:** the installer creates a new `W0-Sync-Orchestrator` beside your existing one. Delete the old `W2-3-1-Sync-Orchestrator` in the n8n UI before running `scripts/install-workflows.sh`, or you'll end up with two orchestrators firing on independent 15-min cadences — which defeats the whole serialization guarantee.
+- **Rate budget:** W1 is capped at `RATE_BUDGET = 250` Morgen ops per run (well under Morgen's 300 points / 15 min API budget). Because W0 fires W2 + W1 serially on every 20-min tick, plan your ops budget against the *cumulative* per-20-min total (W2 + W1 combined) — not W1 in isolation. A fresh backfill that touches 300+ tasks will blow past the Morgen budget; pre-stage via `scripts/morgen-backfill.js` instead.
+- **Existing users with a `W2-3-1-Sync-Orchestrator`:** the installer creates a new `W0-Sync-Orchestrator` beside your existing one. Delete the old `W2-3-1-Sync-Orchestrator` in the n8n UI before running `scripts/install-workflows.sh`, or you'll end up with two orchestrators firing on independent 20-min cadences — which defeats the whole serialization guarantee.
 
 ---
 
