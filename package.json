@@ -2,7 +2,7 @@
   "name": "task-maxxing",
   "version": "0.1.0",
   "private": true,
-  "description": "Perfect task sync between Obsidian, Notion, and Morgen",
+  "description": "Two-way task sync between Obsidian and Morgen",
   "license": "MIT",
   "author": "Nate Davidovich / lorecraft-io",
   "repository": "github:lorecraft-io/task-maxxing",

@@ -2,7 +2,7 @@
 
 A macOS LaunchAgent that watches your Obsidian vault's `06-Tasks/` directory
 and auto-commits + pushes every change to a git remote. Used as the trigger
-for workflow W1 (Obsidian → Notion/Morgen).
+for workflow W1 (Obsidian → Morgen).
 
 ## What this does
 
@@ -11,7 +11,8 @@ for workflow W1 (Obsidian → Notion/Morgen).
    once every 5 minutes.
 2. The script runs `git add -A && git commit -m "auto: task edit …" && git push`.
 3. The push to GitHub triggers an n8n `githubTrigger` webhook (workflow W1),
-   which parses your task files and mirrors them into Notion and Morgen.
+   which parses your task files and mirrors them into Morgen. (Pre-2026-05-04
+   the kit also wrote to Notion; that leg was dropped.)
 
 ## Why Plan B (wrapper `.app` bundle)?
 

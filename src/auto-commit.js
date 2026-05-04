@@ -166,7 +166,7 @@ const main = () => {
   // (see sync-helpers.js BOT_COMMIT_PREFIXES + isBotCommitMessage) skips
   // pushes whose every commit is prefixed with one of the `[bot:*]` labels.
   // Changing this string will cause W1 to interpret every daemon push as a
-  // user edit and re-sync back into Notion/Morgen, looping forever. Don't.
+  // user edit and re-sync back into Morgen, looping forever. Don't.
   const utcStamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
   try {
     const msg = `[bot:daemon] auto: task edit ${utcStamp}`;
