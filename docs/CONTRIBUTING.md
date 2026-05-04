@@ -55,7 +55,7 @@ That's it. No PR, no review cycle.
    - What the change does.
    - Why it matters.
    - Which test scenarios you ran, and whether they passed.
-   - Whether you actually ran this against a real Obsidian + Notion + Morgen stack,
+   - Whether you actually ran this against a real Obsidian + Morgen stack,
      or just unit tests.
 
 PRs from people who ran the full smoke test get merged faster than PRs with only unit
@@ -111,30 +111,39 @@ npm test
 ### End-to-end smoke tests
 
 Slow, require real credentials, **destructive** (they create and delete rows in your
-Notion + Morgen). Point at a dedicated test database and task list, not your main one.
+Morgen account). Point at a dedicated scratch task list, not your main one.
 
 ```bash
 # Set up a dedicated test env
 cp .env .env.test
-# Edit .env.test and point NOTION_DATABASE_ID + MORGEN_API_KEY at scratch resources
+# Edit .env.test and point MORGEN_API_KEY at a scratch Morgen account/list
 $EDITOR .env.test
 
 # Run the e2e suite
 DOTENV_FILE=.env.test node scripts/sync-e2e-tests.js
 ```
 
+> The e2e suite still contains a `simulateW3` mock + Notion-creation /
+> Notion-wins / Notion-tie cases. Those exercise the pre-2026-05-04
+> three-way logic against in-memory mocks (no real Notion calls) and
+> are kept as a regression safety net for the legacy code paths in
+> `src/sync-helpers.js` (area-key↔Notion-label mapping, `notionPageId`
+> shape in `.sync-state.json`). They do not require a Notion token and
+> are scheduled for removal in a future cleanup pass.
+
 **What it does:**
 
 1. Creates a fresh scratch markdown file in a temp directory.
 2. Runs the parser + `.sync-state.json` builder.
-3. Simulates a W1 run by calling the Notion and Morgen APIs directly.
+3. Simulates a W1 run by calling the Morgen API directly (Notion calls
+   are mocked in-memory only).
 4. Verifies the rows appear.
-5. Runs the four smoke-test scenarios from [SETUP.md](SETUP.md#14-smoke-test).
+5. Runs the smoke-test scenarios from [SETUP.md](SETUP.md#step-9-optional--sync-health-watchdog).
 6. Cleans up all created rows.
 
-**Before merging to main, this must be green against a real Notion + Morgen test
-environment.** CI can run unit tests but not e2e, so the PR author has to report this
-manually.
+**Before merging to main, this must be green against a real Morgen test
+account.** CI can run unit tests but not e2e, so the PR author has to
+report this manually.
 
 ### Linting
 
@@ -153,10 +162,12 @@ will handle most of it.
 - `scripts/` — one-shot maintenance scripts (backfill, e2e, install).
 - `workflows/` — n8n workflow JSON exports.
 - `daemon/` — launchd plist template.
-- `notion/` — Notion schema reference.
 - `examples/` — sample files users can copy.
 - `docs/` — everything a user needs to read.
 - `tests/` — unit tests (mirror the `src/` layout).
+
+The `notion/` directory referenced in older copies of this doc was
+removed in the 2026-05-04 cutover and is no longer part of the repo.
 
 Don't create new top-level directories without talking to the maintainer first.
 
@@ -176,10 +187,14 @@ Don't create new top-level directories without talking to the maintainer first.
 
 **Out of scope:**
 
-- **Other apps.** task-maxxing is Obsidian ↔ Notion ↔ Morgen. Adding a fourth app
-  means rethinking the architecture. If you want that, fork.
-- **Web UI.** The point of task-maxxing is that the UI is already Obsidian, Notion,
-  and Morgen. A fourth UI is a liability.
+- **Other apps.** task-maxxing is Obsidian ↔ Morgen as of 2026-05-04
+  (it was previously Obsidian ↔ Notion ↔ Morgen and the Notion leg was
+  removed; see CHANGELOG and ARCHITECTURE.md §"What changed in May
+  2026"). Adding a third app — Notion or anything else — means
+  rethinking the architecture and re-introducing the conflict-resolution
+  surface area the cutover was meant to delete. If you want that, fork.
+- **Web UI.** The point of task-maxxing is that the UI is already
+  Obsidian and Morgen. A third UI is a liability.
 - **Mobile daemon.** Not happening. Run the daemon on your Mac; edit your vault from
   your phone via Obsidian sync.
 - **Migrating from Todoist/Things/TickTick.** If you want to import from those, write
