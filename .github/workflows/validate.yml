@@ -72,9 +72,7 @@ jobs:
         env:
           DRY_RUN: '1'
           GITHUB_TOKEN: fake_gh
-          NOTION_TOKEN: fake_ntn
           MORGEN_KEY: fake_mg
-          NOTION_DATABASE_ID: 00000000-0000-0000-0000-000000000000
           GITHUB_REPO_OWNER: example
           GITHUB_REPO_NAME: example-tasks
           N8N_API_KEY: fake_n8n
