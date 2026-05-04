@@ -122,7 +122,7 @@ Four directed edges, two sub-workflows, one orchestrator, one local daemon.
 
 | Label | Direction                          | Trigger                     | What it does                                                                     |
 |-------|------------------------------------|-----------------------------|----------------------------------------------------------------------------------|
-| **W0**| *meta*                             | Schedule (every 15 min)     | **The orchestrator.** Runs W2 → W1 in sequence via `executeWorkflow` (wait=true). This is the *only* workflow you activate — it serializes the others so they never race on `.sync-state.json`. |
+| **W0**| *meta*                             | Schedule (every 20 min)     | **The orchestrator.** Runs W2 → W1 in sequence via `executeWorkflow` (wait=true). This is the *only* workflow you activate — it serializes the others so they never race on `.sync-state.json`. |
 | **W1**| Obsidian → Morgen                  | Called by W0 (GitHub push trigger present but dormant in default install) | Parses changed `TASKS-*.md` files, creates / updates / closes tasks in Morgen. Mints `🆔 m-XXXXXXXX` IDs in Obsidian for new tasks. |
 | **W2**| Morgen → Obsidian                  | Called by W0                | Polls Morgen tasks. On a `closed` task, commits `- [x]` back to the source markdown file. On new Morgen-origin tasks, appends them to the right `TASKS-{AREA}.md`. |
 
@@ -190,7 +190,7 @@ node scripts/morgen-backfill.js                 # live
 ./scripts/install-workflows.sh
 
 # 7. Activate ONLY the W0-Sync-Orchestrator in the n8n UI.
-#    Leave W1/W2 inactive — W0 calls them directly, in sequence, every 15 min.
+#    Leave W1/W2 inactive — W0 calls them directly, in sequence, every 20 min.
 
 # 8. (Optional) Wire the n8n MCP to Claude Code so you can manage workflows
 #    from the terminal. Your N8N_API_KEY + N8N_BASE_URL are already in .env.
@@ -226,7 +226,7 @@ task-maxxing/
 │   └── README.md          FDA walkthrough + troubleshooting for the daemon
 ├── workflows/
 │   ├── README.md               Import-order notes + placeholder reference
-│   ├── W0-orchestrator-sync-sequencer.json  Sequences W2 → W1 every 15 min
+│   ├── W0-orchestrator-sync-sequencer.json  Sequences W2 → W1 every 20 min
 │   ├── W1-obsidian-git-task-sync.json       n8n export (called by W0)
 │   ├── W2-morgen-task-completion-sync.json  n8n export (called by W0)
 ├── scripts/
@@ -259,7 +259,7 @@ Open an issue or a discussion if you try it. Bug reports with `.sync-state.json`
 - **macOS only** for the daemon (launchd). Linux / Windows users need to port it.
 - **Morgen "inbox" task list only.** Morgen's API doesn't yet expose task-list management, so everything lands in your default inbox list.
 - **Morgen task-to-calendar promotion is unavailable** via API. You'll still drag tasks onto the calendar in Morgen's UI (or lean on Morgen's auto-scheduler).
-- **Rate budget:** W1 is capped at ~100 Morgen ops per run to stay inside Morgen's 300 points / 15 min. Because W0 fires W2 + W1 serially on every 15-min tick, plan your ops budget against the *cumulative* per-15-min total (W2 + W1 combined) — not W1 in isolation. A fresh backfill that touches 300+ tasks will blow past the Morgen budget; pre-stage via `scripts/morgen-backfill.js` instead.
+- **Rate budget:** W1 is capped at ~100 Morgen ops per run to stay inside Morgen's 300 points / 15 min. Because W0 fires W2 + W1 serially on every 20-min tick, plan your ops budget against the *cumulative* per-15-min total (W2 + W1 combined) — not W1 in isolation. A fresh backfill that touches 300+ tasks will blow past the Morgen budget; pre-stage via `scripts/morgen-backfill.js` instead.
 - **Existing users with a `W2-3-1-Sync-Orchestrator`:** the installer creates a new `W0-Sync-Orchestrator` beside your existing one. Delete the old `W2-3-1-Sync-Orchestrator` in the n8n UI before running `scripts/install-workflows.sh`, or you'll end up with two orchestrators firing on independent 15-min cadences — which defeats the whole serialization guarantee.
 
 ---
