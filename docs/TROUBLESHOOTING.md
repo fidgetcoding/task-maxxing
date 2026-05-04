@@ -1,746 +1,423 @@
 # Troubleshooting
 
-> [!IMPORTANT]
-> **2026-05-04 cutover:** Notion-side troubleshooting entries (W3 errors,
-> Notion 401s, schema-mismatch issues) below are obsolete — Notion is no
-> longer in the kit. Skip those entries. The Morgen + Obsidian + W0 / W1 /
-> W2 entries are still current. See [CHANGELOG.md](../CHANGELOG.md).
+Symptom → diagnose → fix runbook for the **two-way Obsidian ↔ Morgen** sync. Each
+entry is one observable failure with the shortest path back to a working pipeline.
 
-Things that have actually broken during real runs, in rough order of how often they
-happen. Every entry has a **symptom**, a **diagnostic** command, and a **fix**.
+If your problem isn't here, open an issue with a redacted `.sync-state.json`
+snippet and the last n8n execution log for whichever workflow stalled.
 
-If your problem isn't here, open an issue with your `.sync-state.json` (redacted) and
-the last 50 lines of the relevant n8n execution log.
+> [!NOTE]
+> **Architecture recap.** As of 2026-05-04 this kit is **two-way**:
+> - **W1** (Obsidian → Morgen) — polls GitHub every 20 min, re-publishes Morgen tasks.
+> - **W2** (Morgen → Obsidian) — polls Morgen every 20 min, commits markdown changes.
+> - **W0** (orchestrator) — every 20 min, runs `W2 → W1` in series.
+> - **Watchdog** — hourly, checks for stale `[bot:W1]` commits, opens a GH issue + optional Telegram on alert.
+>
+> If you're upgrading from a 3-way (Notion) install, jump to the
+> [Legacy: Notion era](#legacy-notion-era) section first, then come back here.
+
+---
+
+## How to use this doc
+
+Find your symptom in the index, top to bottom. Severity tiers:
+
+- **STOP-EVERYTHING** — sync is silently dead, nothing is moving.
+- **WORKING-BUT-WRONG** — sync runs but the data on the other side is wrong.
+- **DAILY-DRIVER** — small annoyances that don't break the loop.
+- **LEGACY** — leftover symptoms from the 3-way Notion era.
 
 ---
 
 ## Index
 
-1. [Daemon: FATAL EPERM — Full Disk Access not granted](#1-daemon-fatal-eperm)
-2. [Morgen: 429 Too Many Requests](#2-morgen-429-too-many-requests)
-3. [Notion: 403 "could not find database"](#3-notion-403-could-not-find-database)
-4. [W1 times out (60 seconds)](#4-w1-times-out-60-seconds)
-5. [`.sync-state.json` is corrupted](#5-sync-statejson-is-corrupted)
-6. [Tasks don't appear in Morgen sidebar](#6-tasks-dont-appear-in-morgen-sidebar)
-7. [Echo-loop: a workflow keeps re-triggering itself](#7-echo-loop)
-8. [n8n credential binding fails on import](#8-n8n-credential-binding-fails)
-9. [Daemon runs but nothing pushes](#9-daemon-runs-but-nothing-pushes)
-10. [Tasks appear in Notion but not Morgen (or vice versa)](#10-partial-create)
-11. [Flip ratio guard tripped](#11-flip-ratio-guard-tripped)
-12. [Tasks show up twice in Notion](#12-duplicate-notion-rows)
+### STOP-EVERYTHING
+
+1. [Sync stopped silently — no `[bot:W1]` commits for hours](#1-sync-stopped-silently)
+2. [W1 401-failing on the GitHub API](#2-w1-401-failing-on-github)
+3. [W2 401-failing on the Morgen API](#3-w2-401-failing-on-morgen)
+4. [n8n cloud instance unreachable](#4-n8n-cloud-instance-unreachable)
+
+### WORKING-BUT-WRONG
+
+5. [Duplicate tasks in Morgen](#5-duplicate-tasks-in-morgen)
+6. [Task edited in Obsidian, not in Morgen](#6-task-edited-in-obsidian-not-in-morgen)
+7. [Task edited in Morgen, not in Obsidian](#7-task-edited-in-morgen-not-in-obsidian)
+8. [Task deleted in Obsidian, ghost in Morgen](#8-task-deleted-in-obsidian-ghost-in-morgen)
+9. [`m-XXXXXXXX` IDs being regenerated on every sync](#9-m-ids-being-regenerated)
+
+### DAILY-DRIVER
+
+10. [Task lands in `TASKS-GENERAL.md` instead of its project area file](#10-task-lands-in-tasks-general)
+11. [Watchdog crying wolf](#11-watchdog-crying-wolf)
+12. [Telegram alerts not arriving](#12-telegram-alerts-not-arriving)
+
+### LEGACY
+
+13. [Upgrading from a 3-way (Notion) install](#13-upgrading-from-a-3-way-notion-install)
 
 ---
 
-## 1. Daemon: FATAL EPERM
+## STOP-EVERYTHING
 
-**Symptom**
+### 1. Sync stopped silently
 
-```
-[daemon] FATAL: EPERM: operation not permitted, open '/Users/you/.../06-Tasks/TASKS-URGENT.md'
-```
+> No `[bot:W1]` commits for hours, no `[bot:W2]` either, edits aren't propagating in either direction.
 
-or
+**Diagnose**
 
-```
-launchctl list | grep task-maxxing
--	1	io.example.task-maxxing-daemon
-```
-
-(the `-` means the daemon has crashed and not restarted cleanly.)
-
-**Cause**
-
-macOS sandbox policy denies any process that hasn't been granted Full Disk Access
-from reading files in `~/Desktop`, `~/Documents`, `~/Downloads`, `~/Library`, or
-iCloud-backed folders. A bare Node script **cannot** be granted FDA — macOS only
-accepts `.app` bundles in the FDA list.
-
-**Diagnostic**
-
-```bash
-tail -30 ~/Library/Logs/task-maxxing.log
-ls -la "$HOME/Library/Application Support/task-maxxing/TaskMaxxingDaemon.app"
-```
-
-If the `.app` bundle doesn't exist, the installer didn't run. Re-run
-`bash daemon/install-daemon.sh` with `BUNDLE_ID`, `WATCH_PATH`, and `SCRIPT_PATH`
-set (see `daemon/README.md`).
-
-If the `.app` bundle exists but the log shows the `FATAL: cannot read …/.git/HEAD
-— macOS Full Disk Access likely not granted` line, FDA isn't granted to that
-specific bundle.
+1. Open the GitHub mirror repo. Look at the last commit by `[bot:W1]` or `[bot:W2]`. If it's >40 min old, the sync is stalled.
+2. In n8n, open the **W0 orchestrator** workflow (the every-20-min cron). Check the **Executions** tab — should be a green run within the last 20 min.
+3. Verify both **W1** and **W2** workflows show `Active: ON` in the n8n workflow list.
 
 **Fix**
 
-1. Open **System Settings → Privacy & Security → Full Disk Access**.
-2. Click **+**, press **Cmd+Shift+G**, paste
-   `~/Library/Application Support/task-maxxing/TaskMaxxingDaemon.app`, select it.
-3. Make sure the toggle is **ON**.
-4. Reload the LaunchAgent so launchctl picks up the new permission:
+1. If W0 is **inactive**, toggle it back to active and click **Execute Workflow** once to kick a run.
+2. If W0 is **active but no recent executions**, the schedule trigger died. Open the workflow, edit anything trivial (a comment in a Code node), save, and re-publish. n8n cloud sometimes drops cron triggers on a deploy and a republish re-arms them.
+3. If W0 is firing but W1 / W2 are **archived**, re-import their JSON from `workflows/` and re-bind credentials.
+4. If W0 ran and you see a red execution, click into it and follow whichever step below matches the failing node (401 on GitHub → entry 2; 401 on Morgen → entry 3).
 
-   ```bash
-   BUNDLE_ID=io.example.task-maxxing-daemon   # whatever you used at install time
-   launchctl bootout  "gui/$(id -u)/${BUNDLE_ID}"
-   launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${BUNDLE_ID}.plist"
-   ```
+**Why it happens**
 
-5. Verify:
-
-   ```bash
-   launchctl list | grep task-maxxing
-   ```
-
-   The first column (PID) should now be a positive integer, not `-`.
-
-**Gotcha:** if you grant FDA to `node` directly (e.g. by adding `/opt/homebrew/bin/node`),
-macOS silently revokes it on the next Node upgrade. Always use the `.app` bundle.
+n8n cloud occasionally drops schedule triggers after a workflow edit or a platform-side deploy. The watchdog will catch this within an hour by opening a GitHub issue, but the fix is the same — republish the workflow.
 
 ---
 
-## 2. Morgen: 429 Too Many Requests
+### 2. W1 401-failing on GitHub
 
-**Symptom**
+> W1 execution shows red on the **GitHub Tree fetch** or **GitHub Contents commit** node with `401 Unauthorized` or `Bad credentials`.
 
-n8n W1 execution shows a node failure with:
+**Diagnose**
 
-```
-Morgen API: 429 Too Many Requests
-```
-
-or the Morgen backfill script exits with:
-
-```
-[ERROR] Rate limit exceeded: 300 points / 15 min
-```
-
-**Cause**
-
-Morgen's rate limit is 300 points per 15-minute rolling window (raised from 100 on
-2026-04-15). Creates, updates, and deletes are 1 point each. Hitting 300 in one W1
-run means you had >300 Morgen ops queued.
-
-**Diagnostic**
-
-Look at the n8n execution log for W1. Count the number of Morgen ops. If you're near
-300, you're hitting the budget. Near 500+, you're doing a full backfill — use
-`morgen-backfill.js` for those instead of letting W1 handle it.
+1. Open the failed W1 execution in n8n.
+2. Click the red node. Look at the **Authorization** header value or the bound credential.
+3. If you see `Bearer ghp_...` or the credential name is greyed out, the PAT is invalid, expired, or unbound.
 
 **Fix**
 
-If you're in the middle of a backfill:
+1. On GitHub: **Settings → Developer settings → Personal access tokens → Fine-grained tokens** → generate a new token. Scope: **Contents: Read and write** on your tasks mirror repo only.
+2. In n8n: **Credentials → GitHub (task-maxxing)** → paste the new token → **Save**.
+3. Re-publish W1 (open the workflow, click **Save**, then toggle **Active** off and on).
+4. Trigger one manual run via **Execute Workflow**. It should land green within 30s.
 
-1. Wait 15 minutes for the Morgen rate window to reset.
-2. Re-run `scripts/morgen-backfill.js`. The script is idempotent: it reads the
-   existing `.sync-state.json` from `VAULT_PATH` and automatically skips any task
-   whose hash is already mapped to a `morgenTaskId`. No flag needed — resume is the
-   default behavior:
+**Why it happens**
 
-   ```bash
-   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
-     node scripts/morgen-backfill.js
-   ```
-
-3. If you still have more tasks than the Morgen budget allows per window, cap the
-   batch explicitly with `--max-points` (default 85 of 100) and rerun each window
-   until all tasks have an ID:
-
-   ```bash
-   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
-     node scripts/morgen-backfill.js --max-points 50
-   ```
-
-If you're in steady-state (not a backfill) and still hitting 429, your vault is
-pushing too many edits at once. Options:
-
-- Reduce the W1 Morgen op budget below the default 100 (edit the workflow's
-  `maxMorgenOps` variable — it lives in the top-level `Set` node).
-- Increase the debounce on the daemon from 1s to 5s so you batch more edits per
-  push.
+Fine-grained PATs default to 90-day expiry. Mark your calendar for renewal at ~80 days, or use a no-expiry token (less safe — your call).
 
 ---
 
-## 3. Notion: 403 "could not find database"
+### 3. W2 401-failing on Morgen
 
-**Symptom**
+> W2 execution shows red on a `https://api.morgen.so/v3/...` node with `401 Unauthorized`.
 
-```
-Notion API: 403 Forbidden
-Body: {"object":"error","status":403,"code":"object_not_found",
-       "message":"Could not find database with ID: {{NOTION_DATABASE_ID}}.
-                  Make sure the relevant pages and databases are shared with your integration."}
-```
+**Diagnose**
 
-**Cause**
-
-You created the database before connecting the integration to it, OR you connected
-the integration to a parent page but not to this database specifically.
-
-**Diagnostic**
-
-1. Open the Tasks database in Notion.
-2. Click the `•••` menu in the top-right.
-3. Click **Connections**.
-4. Is your `task-maxxing` integration listed under **Connected to**?
-
-If no, fix. If yes but you still see 403, the database ID in `.env` is wrong — see
-next.
+1. Open the failed W2 execution.
+2. Click the red node, check the `Authorization: ApiKey ...` header.
+3. Verify the API key isn't `undefined` or empty (n8n shows `[CREDENTIAL]` placeholder when bound — empty means unbound).
 
 **Fix**
 
-**Scenario A: integration not connected**
+1. In Morgen: **Settings → API & Integrations → Generate API key** (or rotate the existing one — note that rotating revokes the old key).
+2. In n8n: **Credentials → Morgen (task-maxxing)** → paste the new key → **Save**.
+3. Re-publish W2 (toggle **Active** off / on).
+4. **Execute Workflow** once to confirm green.
 
-1. In the Notion database, click `•••` → **Connections** → **Connect to** → pick
-   `task-maxxing`.
-2. Confirm.
-3. Re-run the failing W1 execution (or just trigger a commit).
+**Why it happens**
 
-**Scenario B: wrong database ID in .env**
-
-The URL of the Notion database page is:
-
-```
-https://www.notion.so/{{WORKSPACE}}/{{PAGE_TITLE}}-{{32_HEX_CHARS}}?v={{VIEW_ID}}
-```
-
-Make sure `NOTION_DATABASE_ID` in `.env` matches the 32 hex chars in the URL,
-**not** the view ID.
-
-```bash
-grep NOTION_DATABASE_ID .env
-```
-
-Normalize: strip dashes if any. task-maxxing accepts both forms but the Notion API is
-picky.
+Morgen API keys don't auto-expire, but they get revoked if you rotate them in the Morgen UI for any reason. There's no warning — the n8n credential just starts returning 401.
 
 ---
 
-## 4. W1 times out (60 seconds)
+### 4. n8n cloud instance unreachable
 
-**Symptom**
+> The n8n UI won't load, or workflows are stuck in a `running` state forever.
 
-n8n W1 execution shows:
+**Diagnose**
 
-```
-Workflow execution timed out after 60 seconds
-```
-
-and only some of your tasks have been synced.
-
-**Cause**
-
-Notion's 3 req/s rate limit + a large diff = exceeds 60s workflow timeout.
-
-**Diagnostic**
-
-Look at the W1 execution log. Count the operations that completed before timeout. If
-it was >80, you're at the edge of the budget. If it was <20, there's a slow node
-somewhere (usually a Code node doing something naive).
+1. Visit [status.n8n.io](https://status.n8n.io/) — check for active incidents.
+2. Try loading your n8n workspace URL in an incognito window (rules out a stale auth cookie).
 
 **Fix**
 
-**Option 1: reduce the Notion throttle** (if your account has no issues with Notion's
-rate limit, you can go from 3 req/s to 5 req/s):
-
-1. Open W1 in n8n.
-2. Find the top-level `Set` node at the start.
-3. Change `notionRateLimit` from `3` to `5`.
-4. Save.
-
-**Option 2: shrink the diff W1 sees.** W1 only processes tasks whose hash doesn't
-match `.sync-state.json`'s `lastSyncedHash`. Run the Morgen backfill, commit the
-updated `.sync-state.json`, and the next W1 push will see a smaller delta because
-Morgen IDs are already mapped:
-
-```bash
-VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
-  node scripts/morgen-backfill.js
-# …then commit .sync-state.json and push so n8n W1 sees the update.
-```
-
-(There is no `--notion-only` flag — Notion writes are owned by W1, not the
-backfill script.)
-
-**Option 3: increase workflow timeout**
-
-In n8n's workflow settings, change the timeout from 60s to 120s. This is a
-band-aid — the real fix is Option 1 or 2.
+- **If n8n is down platform-wide**: wait. The watchdog will alert when commits go stale, and the sync resumes automatically once n8n is back. No manual intervention needed.
+- **If only your instance is wedged**: open a support ticket with n8n. In the meantime, you can self-host n8n locally and re-import the workflows from `workflows/` — see [n8n's self-host docs](https://docs.n8n.io/hosting/) (out of scope here).
+- **If your auth cookie went stale**: clear cookies for the n8n domain and log back in.
 
 ---
 
-## 5. `.sync-state.json` is corrupted
+## WORKING-BUT-WRONG
 
-**Symptom**
+### 5. Duplicate tasks in Morgen
 
-Daemon logs show:
+> Same task text appears twice (or more) in the Morgen sidebar.
 
-```
-[daemon] parse error: Unexpected token { in JSON at position 4019
-```
-
-or W1 fails with:
-
-```
-Cannot read property 'tasks' of undefined
-```
-
-**Cause**
-
-A bad git merge, an interrupted write, or editing `.sync-state.json` by hand. The
-file is meant to be generated, never touched.
-
-**Diagnostic**
+**Diagnose**
 
 ```bash
-cat ~/Desktop/{{YOUR_VAULT_NAME}}-tasks/sync-state.json | jq . > /dev/null
+# In your vault, grep for the duplicated task text without the 🆔 token:
+cd "$VAULT_PATH/06-Tasks"
+grep -rn "the task text here" .
+
+# Then check whether the matching line in markdown carries 🆔 m-XXXXXXXX:
+grep -rn "🆔 m-" . | grep "the task text here"
 ```
 
-If `jq` errors out, the file is invalid.
+If the markdown line has no `🆔 m-XXXXXXXX`, that's the bug — W1 minted a fresh ID on the next run because it couldn't find the existing one.
 
 **Fix**
 
-task-maxxing treats markdown as canonical, so the recovery path is always:
-rebuild `.sync-state.json` from the current markdown, then repair the Notion and
-Morgen sides manually.
-
-1. **Delete the corrupted `.sync-state.json` from your vault.** It lives in the
-   `VAULT_PATH` directory (alongside `TASKS-*.md`), with the leading-dot name:
-
-   ```bash
-   rm "$VAULT_PATH/.sync-state.json"
+1. Open the Morgen sidebar. Find the dupe pair. Pick the one with the most recent `updatedAt` and **copy its task ID** from the URL or details panel (Morgen task IDs look like `m-a1b2c3d4`).
+2. **Delete** the other Morgen dupe.
+3. In your vault, edit the task line and append the surviving ID:
    ```
-
-2. **Re-run the Morgen backfill.** It will walk every task file, compute fresh
-   hashes, skip the already-archived Morgen tasks whose IDs were in the old state,
-   and write a brand-new `.sync-state.json`:
-
-   ```bash
-   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
-     node scripts/morgen-backfill.js --dry-run   # preview
-   VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
-     node scripts/morgen-backfill.js             # live
+   - [ ] task text ⏫ 📅 2026-05-10 🆔 m-a1b2c3d4
    ```
+4. Save. Daemon commits, W1 runs on the next 20-min tick. From now on, that task is stable.
 
-3. **Clean up orphan Morgen tasks manually.** Because the old `morgenTaskId`
-   mappings are gone, the rebuilt run will create new Morgen tasks — any
-   previously-created tasks from before the corruption become orphans. Filter
-   Morgen's UI to "task-maxxing" tagged tasks and delete the duplicates, or skip
-   this step if the backfill only had to re-seed a handful of tasks.
+Alternative: open `06-Tasks/.sync-state.json`, find the entry by `text`, copy its `morgenTaskId`, paste back into the markdown line as the `🆔` value.
 
-4. **Commit the restored state:**
+**Why it happens**
 
-   ```bash
-   cd "$VAULT_PATH"
-   git add .sync-state.json
-   git commit -m "[bot:backfill] rebuild .sync-state.json after corruption"
-   git push
-   ```
-
-5. W1 will see the next push, reconcile its local state, and W2/W3 will rebuild
-   their reverse indexes on the next cron tick.
-
-If the markdown parser shows different task counts than you expect, run the
-parser directly to debug:
-
-```bash
-node -e '
-  const h = require("./src/sync-helpers");
-  const fs = require("fs");
-  const md = fs.readFileSync(process.argv[1], "utf8");
-  console.log(h.parseObsidianTasks(md, process.argv[1]).length, "tasks");
-' "$VAULT_PATH/TASKS-URGENT.md"
-```
+W1's only join key from markdown → Morgen is the `🆔 m-XXXXXXXX` token. If a manual edit, a copy-paste, or a `/save` write strips it, W1 sees an "ID-less new task" and creates a fresh Morgen row alongside the old one. Treat the `🆔` token as load-bearing.
 
 ---
 
-## 6. Tasks don't appear in Morgen sidebar
+### 6. Task edited in Obsidian, not in Morgen
 
-**Symptom**
+> You changed a task's due date / priority / text in Obsidian, daemon committed it, but Morgen still shows the old value 30+ min later.
 
-You ran the backfill, `.sync-state.json` has `morgenTaskId` values, the Morgen API
-reports the tasks exist — but they don't appear in the Morgen sidebar UI.
-
-**Cause**
-
-Two possible reasons:
-
-1. **Tag cache mismatch.** Morgen's tag IDs are UUIDs, and if the workflow's
-   `_tagCache` created a tag with the same name as one you already had, Morgen's UI
-   sometimes hides tasks with "orphan" tag IDs until you refresh.
-2. **Integration filter is hiding them.** The Morgen UI has a filter dropdown that
-   defaults to "All tasks" but can be narrowed. If you set it to "From my phone"
-   (or similar), API-created tasks won't show.
-
-**Diagnostic**
-
-Force a fresh tag lookup:
+**Diagnose**
 
 ```bash
-curl -sS \
-  -H "Authorization: ApiKey ${MORGEN_API_KEY}" \
-  https://api.morgen.so/v3/tags/list
+cd "$VAULT_PATH/06-Tasks"
+git log -1 --pretty=format:"%s%n%b" -- TASKS-*.md FIDGETCODING/**/TASKS-*.md
 ```
 
-Compare the tag IDs returned to what's in `.sync-state.json`:
+Look at the commit subject. If it starts with **any `[bot:*]` prefix**, that's the problem — W1's echo guard skipped the run.
+
+Also check the n8n W1 executions tab — if there's no execution within the last 20 min on that file's commit, the trigger never fired.
+
+**Fix**
+
+**If the commit was bot-prefixed by accident** (e.g., a tool committed for you with `[bot:save]`):
 
 ```bash
-jq '.tasks[] | .morgenTaskId + " " + (.tags | join(","))' sync-state.json | head -20
+# Re-commit with a non-bot subject so W1 picks it up:
+cd "$VAULT_PATH/06-Tasks"
+git commit --allow-empty -m "manual edit on $(date -u +%FT%TZ)"
+git push origin main
+```
+
+Within 20 min, W1 will run and propagate to Morgen.
+
+**If you can't redo the commit** (already squashed / pushed elsewhere): just edit the task manually in Morgen to match. The next time you change anything in either side, the sync will reconcile.
+
+**Why it happens**
+
+The echo-loop guard exists to prevent W2's commits from triggering W1 (which would create an infinite ping-pong). The cost is that *any* `[bot:*]` commit is invisible to W1. Use plain prefixes for human edits.
+
+---
+
+### 7. Task edited in Morgen, not in Obsidian
+
+> You changed a task in the Morgen UI (date, priority, completion), but the markdown still shows the old value 30+ min later.
+
+**Diagnose**
+
+1. Open n8n → **W2 workflow** → **Executions** tab. Look for a run within the last 20 min.
+2. If executions are running but **no commit** is being pushed, click into the latest run and check the diff node — the change might be invisible to W2's filter.
+3. If no executions at all, W2's schedule trigger is dead (see entry 1).
+4. Check for Morgen 429s in the execution log — see "Why it happens" below.
+
+**Fix**
+
+1. Open the W2 workflow in n8n.
+2. Click **Execute Workflow** to fire a manual run.
+3. Watch the run. If it goes green and commits to GitHub, the schedule trigger was just lagging — it'll resume on the next 20-min tick. Done.
+4. If the manual run fails on a Morgen API node, follow entry 3 (Morgen 401) or wait 15 min for a 429 rate-limit reset.
+5. If the run completes but no commit fires, the task's change wasn't in W2's six tracked dimensions (text, due, scheduled, priority, completion, deletion). Sub-second time changes from Morgen's auto-scheduler intentionally don't round-trip.
+
+**Why it happens**
+
+Morgen's API is rate-limited at 300 points / 15 min. W2's `/v3/tasks/list` call costs 10 points per run, so a 30-task batch update plus list overhead can push us past the budget — Morgen replies 429 and W2 silently defers to the next run.
+
+---
+
+### 8. Task deleted in Obsidian, ghost in Morgen
+
+> You removed a task line from a `TASKS-*.md` file. Daemon committed. Morgen still shows the task.
+
+**Diagnose**
+
+This is the documented asymmetric-delete behavior, not a bug. W1 does **not** soft-delete Morgen tasks when a markdown line disappears — only W2 propagates deletes (Morgen → Obsidian).
+
+```bash
+# Confirm the markdown line is actually gone:
+cd "$VAULT_PATH/06-Tasks"
+git log -p -- TASKS-*.md | grep "🆔 m-XXXXXXXX"
 ```
 
 **Fix**
 
-**Scenario A: tag cache mismatch**
+To remove the task from both sides cleanly: **delete it in Morgen**. On the next W2 tick (≤20 min), W2 will see the Morgen task is gone and remove the corresponding markdown line (or strike it through, depending on your settings).
 
-1. Restart the Morgen app (cmd+Q, reopen).
-2. If that doesn't work, delete the orphan tag via API:
+If the markdown is already gone and you just want to clear the Morgen ghost: open Morgen, delete it manually. No further sync action needed — there's no markdown line for the deletion to propagate back to.
 
+**Why it happens**
+
+Asymmetric delete is intentional. The original 3-way design treated Notion and Morgen as mirrors — deleting markdown was a destructive act that should require explicit confirmation in the source app. The 2-way version inherits that rule. If you want symmetric delete, that's a workflow change in W1 (open an issue).
+
+---
+
+### 9. `m-XXXXXXXX` IDs being regenerated
+
+> Every W1 run mints a new `🆔 m-XXXXXXXX` for the same task, creating a Morgen dupe each cycle.
+
+**Diagnose**
+
+```bash
+cd "$VAULT_PATH/06-Tasks"
+git log -p -- TASKS-*.md | grep "🆔 m-" | sort | uniq -c | sort -rn | head
+```
+
+If the same task line shows multiple distinct `m-` IDs over recent commits, something is stripping the ID between syncs.
+
+Common culprits:
+
+- A pre-commit hook reformatting markdown (e.g., a Prettier hook flattening emoji tokens).
+- A plugin or skill that rewrites task lines without preserving the `🆔` token.
+- Manual edits that drop the trailing emoji block.
+
+**Fix**
+
+1. Identify the writer. Run `git log -p` on the task file and find the commit that introduced the ID-less version. The author / commit message tells you which tool.
+2. Disable or fix the offending pre-commit / plugin / skill so it preserves trailing `🆔 m-XXXXXXXX` tokens byte-for-byte.
+3. Manually re-merge the duplicate Morgen tasks — keep the most recent `m-` ID, delete the others, paste the surviving ID back into the markdown line.
+4. Re-commit. From now on, the task should be stable.
+
+**Why it happens**
+
+W1 only mints new IDs when a task line **lacks** the `🆔` token. The mint is the right behavior for genuinely new tasks; it's the wrong behavior when a writer accidentally strips an existing ID. The fix is always upstream — protect the `🆔` token.
+
+---
+
+## DAILY-DRIVER
+
+### 10. Task lands in TASKS-GENERAL
+
+> You created a task that should have gone into a project area file (`TASKS-LORECRAFT.md`, `TASKS-WAGMI.md`, etc.) but it landed in `TASKS-GENERAL.md`.
+
+**Diagnose**
+
+Open the task line. Check the trailing `🏷️` tag (or whatever your task creator uses to route by area). If the tag doesn't match a known area, the creator falls back to `GENERAL`.
+
+**Fix**
+
+1. Cut the line out of `TASKS-GENERAL.md`.
+2. Paste it into the correct `TASKS-{AREA}.md`.
+3. **Preserve the `🆔 m-XXXXXXXX` token byte-for-byte** so the Morgen-side mapping survives the move.
+4. Save. Daemon commits, W1 runs on the next tick — Morgen's task tag updates to match the new area.
+
+If you use the `maketasks` skill to create tasks, fix the source: pass the area tag explicitly when creating, or update the alias map so the entity routes to the right area.
+
+**Why it happens**
+
+`TASKS-GENERAL.md` is the catch-all by design. Wrong-area writes are a tagging bug, not a sync bug.
+
+---
+
+### 11. Watchdog crying wolf
+
+> You got a GitHub issue (or Telegram message) saying "no `[bot:W1]` commit in 60+ min" but you can see W1 is healthy.
+
+**Diagnose**
+
+1. Open the GH issue the watchdog created. Note the exact threshold it complained about.
+2. Cross-check against the actual last `[bot:W1]` commit timestamp in the mirror repo.
+3. Common false-positive causes:
+   - You took a real break (no markdown edits, no Morgen edits) for >60 min, so there was nothing for W1 to commit.
+   - Your real cadence is slower than 60 min (e.g., W0 firing every 30 min instead of 20 min for some reason).
+
+**Fix**
+
+1. Comment on the watchdog-opened GH issue: `recovered manually — no actual edits in window`.
+2. Close the issue.
+3. If false positives are frequent, open the **Watchdog workflow** in n8n, find the Code node holding the `STALE_MINUTES` constant, and bump it from `60` to `90` or `120`. Save and re-publish.
+
+**Why it happens**
+
+The watchdog measures "time since last `[bot:W1]` commit" — but if you didn't edit anything in either Morgen or Obsidian for >60 min, W1 has nothing to commit. That's a quiet system, not a broken one. `STALE_MINUTES` is a heuristic; tune it to your actual rhythm.
+
+---
+
+### 12. Telegram alerts not arriving
+
+> The watchdog is opening GH issues fine but the optional Telegram pings never land.
+
+**Diagnose**
+
+1. Open the **Watchdog workflow** in n8n. Find the Telegram node.
+2. Check the `TELEGRAM_CHAT_ID` constant in the upstream Code node — is it set, or is it the placeholder `0`?
+3. Confirm the bot token is bound (n8n credential `Telegram (task-maxxing)`).
+
+**Fix**
+
+1. **DM your bot once** from the Telegram account that should receive alerts. (The bot can't initiate conversations — Telegram requires a first inbound message.)
+2. Fetch your chat ID:
    ```bash
-   curl -X DELETE \
-     -H "Authorization: ApiKey ${MORGEN_API_KEY}" \
-     https://api.morgen.so/v3/tags/{{ORPHAN_TAG_ID}}
+   curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getUpdates" | jq '.result[].message.chat.id'
    ```
+3. Paste the chat ID into the Watchdog workflow's `TELEGRAM_CHAT_ID` constant. Save and re-publish.
+4. Trigger the watchdog manually with a stale state to confirm a real ping arrives.
 
-3. Re-run the backfill. It'll recreate the tag with a fresh ID.
+**Why it happens**
 
-**Scenario B: UI filter**
-
-In the Morgen sidebar, click the filter dropdown. Pick **All tasks** or
-**My integrations**. The tasks should now be visible.
-
-**Scenario C: orphan tags**
-
-If the tag cache in `.sync-state.json` points at tag IDs that no longer exist in
-Morgen (you deleted a tag manually, or the Morgen workspace was rotated), new task
-writes will fail with a tag-resolution error. Clear the `_tagCache` object in
-`.sync-state.json` (replace with `{}`) and re-run the backfill — it will refetch
-`/v3/tags/list` and rebuild the cache from live data:
-
-```bash
-node -e '
-  const fs = require("fs");
-  const p = process.argv[1];
-  const s = JSON.parse(fs.readFileSync(p, "utf8"));
-  s._tagCache = {};
-  fs.writeFileSync(p, JSON.stringify(s, null, 2));
-' "$VAULT_PATH/.sync-state.json"
-VAULT_PATH="$HOME/path/to/your-vault/06-Tasks" \
-  node scripts/morgen-backfill.js
-```
+Telegram's bot API requires the user to message the bot first before the bot can send DMs. Skipping that step leaves you with a green-looking workflow that silently no-ops on the Telegram step.
 
 ---
 
-## 7. Echo-loop
+## LEGACY
 
-**Symptom**
+### 13. Upgrading from a 3-way (Notion) install
 
-W1 is triggering every 60 seconds on its own, even though you haven't edited
-anything. n8n's executions page shows a new W1 run every cycle. The daemon log shows
-commits with `[bot:W2]` or `[bot:W3]` being committed, followed immediately by a new
-`[bot:daemon]` commit.
+> You cloned `task-maxxing` before 2026-05-04, originally set it up with Notion in the loop, and now you're seeing weird errors mentioning Notion / W3 / `NOTION_TOKEN`.
 
-**Cause**
+**Diagnose**
 
-The bot commit prefix guard is supposed to prevent this. It looks at
-`commits[].message` on the incoming push webhook and skips the write phase if **every**
-commit is `[bot:*]`.
+Check for any of these symptoms:
 
-The loop usually comes from one of:
-
-1. A commit message that doesn't start with `[bot:*]` (maybe a manual
-   `git commit --amend` that dropped the prefix).
-2. A squash-merge in the mirror repo that stripped the bot prefix.
-3. A clock skew where W2 thinks a task changed at T+60s but `.sync-state.json` still
-   says T.
-
-**Diagnostic**
-
-```bash
-cd "$VAULT_PATH"
-git log --oneline -20
-```
-
-Look for commits without `[bot:daemon]`, `[bot:W1]`, `[bot:W2]`, `[bot:W3]`, or
-`[bot:backfill]` prefixes. Any unprefixed commit will cause W1 to assume it's a
-user edit. (The canonical list is `BOT_COMMIT_PREFIXES` in `src/sync-helpers.js`.)
+- A workflow named `W3` (or anything `Notion`-flavored) still shows in your n8n workspace.
+- Your n8n credentials list still has a `Notion (task-maxxing)` entry.
+- Your `.env` (or n8n env vars) still defines `NOTION_TOKEN`, `NOTION_DATABASE_ID`, or similar.
+- Stale execution errors from before the cutover are still in the n8n executions list.
 
 **Fix**
 
-1. **Stop the loop.** Deactivate W1 temporarily in the n8n UI.
-2. **Find the offending commit.** Look for the first commit that started the loop.
-3. **If it's a manual amend**, re-add the bot prefix:
-
-   ```bash
-   git commit --allow-empty -m "[bot:recovery] reset loop"
-   git push
-   ```
-
-4. **If it's a clock-skew bug,** check W2's `lastSyncedAt` comparison logic. W2
-   should use `>=` not `>` when comparing timestamps. This has been fixed in
-   main — if your workflow JSON is older, re-import from the repo.
-5. **Re-activate W1.**
-
----
-
-## 8. n8n credential binding fails
-
-**Symptom**
-
-After `./scripts/install-workflows.sh`, you open a workflow in n8n and the HTTP
-Request nodes show a red dot and "Credential not set".
-
-**Cause**
-
-The n8n API lets you import a workflow, but credential references are stored by
-**credential name**, not ID. If the credentials you created in the UI don't have
-exactly the same names as the slots in the workflow JSON, the binding silently fails.
-
-**Diagnostic**
-
-Open the failing node, click **Credential for Notion API**, and look at the dropdown.
-The expected name is one of:
-
-- `Notion (task-maxxing)`
-- `Morgen (task-maxxing)`
-- `GitHub (task-maxxing)`
-
-If your credentials have different names (e.g. `Notion Tasks`), that's the mismatch.
-
-**Fix**
-
-**Option A:** Rename your existing credentials in n8n to exactly match the expected
-name. Credentials → click the credential → edit the name → save. Then reopen the
-workflow — the nodes should auto-bind.
-
-**Option B:** Manually re-bind each HTTP Request node:
-
-1. Open the workflow.
-2. Click a red-dotted node.
-3. In the **Authentication** dropdown, pick **Predefined Credential Type**.
-4. Pick the correct credential from the list.
-5. Save.
-6. Repeat for every red-dotted node (usually 3–5 per workflow).
-
----
-
-## 9. Daemon runs but nothing pushes
-
-**Symptom**
-
-`launchctl list | grep task-maxxing` shows a positive PID. The daemon log shows
-"watching" and "parsed" but no "committed" or "pushed" lines.
-
-**Cause**
-
-Several options:
-
-1. The git remote is wrong (can't find origin).
-2. The `GITHUB_TOKEN` doesn't have write access to the mirror repo.
-3. There are no actual changes to commit (daemon is working as intended and silently
-   doing nothing).
-
-**Diagnostic**
-
-```bash
-cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
-git remote -v
-git status
-```
-
-Then trigger a manual sync test:
-
-```bash
-touch ~/{{VAULT_PATH}}/06-Tasks/TASKS-URGENT.md
-tail -5 ~/Library/Logs/task-maxxing-daemon.log
-```
-
-You should see "debounced" and then "no changes" or "committed".
-
-**Fix**
-
-**Scenario A: wrong remote**
-
-```bash
-cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
-git remote set-url origin https://github.com/{{YOUR_GH_USERNAME}}/{{YOUR_VAULT_NAME}}-tasks.git
-```
-
-**Scenario B: PAT can't push**
-
-```bash
-# Try a manual push with the PAT
-GITHUB_TOKEN=$(grep GITHUB_TOKEN .env | cut -d= -f2)
-cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
-git -c http.extraHeader="Authorization: Bearer ${GITHUB_TOKEN}" push origin main
-```
-
-If that fails with 403, your PAT doesn't have Contents: Read and Write. Go back to
-[SETUP.md section 8](SETUP.md#8-create-the-vault-mirror-github-repo) and recreate the
-token.
-
-**Scenario C: daemon is fine, nothing actually changed**
-
-This is working as intended. The daemon only commits when parsed state differs from
-the last committed state. If you haven't actually edited a task, there's nothing to
-push.
-
----
-
-## 10. Partial create (Notion yes, Morgen no, or vice versa)
-
-**Symptom**
-
-You added a new task. It shows up in Notion but not Morgen, or the reverse.
-
-**Cause**
-
-W1 ran the Notion create successfully but failed the Morgen create (or vice versa),
-and the workflow exited before updating `.sync-state.json`. The next W1 run will see
-the task as "still missing a morgenTaskId" and retry just the Morgen side.
-
-**Diagnostic**
-
-```bash
-cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
-cat sync-state.json | jq '.tasks[] | select(.morgenTaskId == null or .notionPageId == null)'
-```
-
-Any task showing up here is "half-synced". Check the most recent W1 execution log in
-n8n for the failure.
-
-**Fix**
-
-Trigger a fresh W1 run. The simplest way is to add an empty line to any `TASKS-*.md`
-file and save (the daemon will push, W1 will run).
-
-If W1 keeps failing on the same side repeatedly, the underlying cause is one of the
-other sections in this doc (rate limit, 403, etc.). Fix that first.
-
----
-
-## 11. Flip ratio guard tripped
-
-**Symptom**
-
-W1 execution shows a warning node:
-
-```
-[W1] flip ratio 0.34 exceeds limit 0.25 — refusing to sync.
-  Tasks: 47 total, 16 would flip (12 archives, 3 creates, 1 update)
-  Set FORCE_SYNC=true in workflow env vars to override.
-```
-
-and no Notion / Morgen writes happened.
-
-**Cause**
-
-More than 25% of your tasks would change state in a single W1 run. This is the safety
-rail catching "user accidentally deleted TASKS-URGENT.md".
-
-**Diagnostic**
-
-```bash
-cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
-git log --oneline -5
-git diff HEAD~1 HEAD -- sync-state.json | head -50
-```
-
-If you see a large number of lines deleted from `sync-state.json`, that's the flip.
-
-**Fix**
-
-**If the flip was legitimate** (e.g., you finished a big project and closed 20 tasks):
-
-1. Open W1 in n8n.
-2. Find the top `Set` node.
-3. Temporarily set `forceSync = true`.
-4. Save.
-5. Trigger the workflow (re-run last execution).
-6. Set `forceSync = false` again.
-7. Save.
-
-**If the flip was an accident** (e.g., you deleted a file by mistake):
-
-1. Revert the mirror repo to the last good commit:
-
-   ```bash
-   cd ~/Desktop/{{YOUR_VAULT_NAME}}-tasks
-   git revert HEAD
-   git push
-   ```
-
-2. Fix the source markdown in your vault.
-3. Wait for the daemon to push the correction.
-
----
-
-## 12. Duplicate Notion rows
-
-**Symptom**
-
-You see the same task twice (or more) in Notion.
-
-**Cause**
-
-Three possibilities, in order of likelihood:
-
-1. **You edited a task in Obsidian before its initial W1 sync finished.** The task
-   got hash `abc` when W1 started, but `def` by the time it finished. W1 created the
-   row with the old hash, then the next run created a new row with the new hash
-   (because it couldn't find the old hash in state).
-2. **`.sync-state.json` got reset but Notion wasn't cleaned.** The recovery
-   procedure in section 5 rebuilds Morgen IDs but doesn't know about the stale
-   Notion rows, so W1's first post-recovery run creates fresh rows alongside the
-   old ones.
-3. **Two different markdown lines with the same text but different sourceFile.**
-   These are intentionally distinct tasks (per the hashing strategy) but look
-   identical in Notion because the `Source` column is collapsed.
-
-**Diagnostic**
-
-In Notion, add a filter: group by `Hash`. Any hash with count > 1 is a true duplicate.
-
-**Fix**
-
-**For true duplicates (same hash, multiple rows):**
-
-1. Pick the "real" row — whichever one has the most recent `Synced At`.
-2. Delete the others from Notion directly (don't use archive — use delete).
-3. Do NOT update `.sync-state.json`. The next W1 run will regenerate it if needed.
-
-**For near-duplicates (different hashes, same text):**
-
-These are actually two different tasks that happened to have the same text. Edit one
-of them in the source markdown to differentiate.
-
-**For the "interrupted sync" case:**
-
-1. Stop the daemon temporarily:
-
-   ```bash
-   BUNDLE_ID=io.example.task-maxxing-daemon   # whatever you used at install time
-   launchctl bootout "gui/$(id -u)/${BUNDLE_ID}"
-   ```
-
-2. Delete the duplicate Notion rows by hand.
-3. Follow the recovery steps in section 5 of this file to rebuild
-   `.sync-state.json` against the current markdown + Morgen state.
-4. Reload the daemon:
-
-   ```bash
-   launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${BUNDLE_ID}.plist"
-   ```
+1. **In n8n:**
+   - Archive the `W3` workflow (or delete it). It's a no-op stub post-cutover and serves no purpose.
+   - Delete the `Notion (task-maxxing)` credential.
+   - Open the **W0 orchestrator** workflow. Confirm it only chains `W2 → W1` — if there's still a Notion / W3 step, replace it with a re-imported W0 from `workflows/` in this repo.
+2. **In your env:**
+   - Remove `NOTION_TOKEN`, `NOTION_DATABASE_ID`, and any related vars from `.env` and from n8n's environment settings.
+3. **Re-import the current workflow JSON** from `workflows/W0-orchestrator.json`, `workflows/W1-obsidian-to-morgen.json`, and `workflows/W2-morgen-to-obsidian.json` (filenames may vary — check the directory). Re-bind credentials. Re-publish.
+4. **Optional:** if you have lingering Notion task rows you want to archive, do it from the Notion UI directly. The kit no longer touches Notion at all, so leftover rows are inert.
+
+A `MIGRATION.md` may be present in the repo root with a step-by-step walkthrough of the 3-way → 2-way cutover. If it's there, follow it for the cleanup; if not, the steps above cover it.
+
+**Why it happens**
+
+Notion was dropped from the live stack on 2026-05-04. The kit on `main` is two-way only, but old installs carry their original n8n state until you clean it up. The leftover Notion plumbing won't break the 2-way sync — it just clutters the n8n UI and confuses future debugging.
 
 ---
 
 ## Still stuck?
 
-Open an issue at [github.com/lorecraft-io/task-maxxing/issues](https://github.com/lorecraft-io/task-maxxing/issues)
-with:
+Open an issue at [github.com/lorecraft-io/task-maxxing/issues](https://github.com/lorecraft-io/task-maxxing/issues) with:
 
-1. **Which step in SETUP.md you were on** (or "in steady state").
-2. **The error message**, copy-pasted verbatim.
-3. **The last 50 lines of the relevant log:**
-   - Daemon: `~/Library/Logs/task-maxxing-daemon.log`
-   - n8n: the workflow execution log (redact tokens)
-4. **A redacted `.sync-state.json` snippet** for the affected task.
+1. **Which entry above you tried** (or "not in the runbook").
+2. **The exact error message**, copy-pasted verbatim.
+3. **Last 20 lines of the relevant n8n execution log**, redacted of tokens.
+4. **A redacted snippet from `06-Tasks/.sync-state.json`** for the affected task.
 
-Most bugs are fixable in one round-trip if you include all four.
+Most issues are fixable in one round-trip with all four.
