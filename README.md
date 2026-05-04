@@ -6,7 +6,10 @@
 
 ![task-maxxing](https://raw.githubusercontent.com/lorecraft-io/task-maxxing/main/taskmaxxing.png)
 
-**Perfect three-way task sync between Obsidian, Notion, and Morgen — a DIY kit.**
+**Two-way task sync between Obsidian and Morgen — a DIY kit.**
+
+> [!NOTE]
+> **2026-05-04 cutover:** Notion was dropped from this kit. The maintained pipeline is now **Obsidian ↔ Morgen** two-way. The W3 (Notion → Obsidian) workflow has been removed and W1 no longer touches the Notion API. If you cloned the kit before this date and want the original three-way mode, pin to a commit on `main` before this banner. References to Notion still appear in some doc files (ARCHITECTURE.md, DESIGN-RATIONALE.md, etc.) — those sections are kept as historical context but the working code is now two-way.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -49,11 +52,11 @@
 
 ## What this is
 
-`task-maxxing` keeps one task in sync across the three apps I actually live in: **Obsidian** (my files), **Notion** (the pretty UI I can share), and **Morgen** (the calendar that auto-schedules my day). Tick a box in any one of them and the other two catch up in under a minute — priority, due date, scheduled block, completion state, everything.
+`task-maxxing` keeps one task in sync across the two apps I actually live in: **Obsidian** (my files) and **Morgen** (the calendar that auto-schedules my day). Tick a box in either one and the other catches up in under a minute — priority, due date, scheduled block, completion state, everything.
 
-This repo is the reference implementation I built for my own vault. It's packaged as a kit you can clone, re-point at your own accounts, and run in about two hours.
+This repo is the reference implementation I built for my own vault. It's packaged as a kit you can clone, re-point at your own accounts, and run in about an hour.
 
-### Do you actually need a three-way sync?
+### Do you actually need a two-way sync?
 
 Honestly? Probably not. For most people, pick one app and live there.
 
@@ -124,10 +127,9 @@ Six directed edges, three sub-workflows, one orchestrator, one local daemon.
 
 | Label | Direction                          | Trigger                     | What it does                                                                     |
 |-------|------------------------------------|-----------------------------|----------------------------------------------------------------------------------|
-| **W0**| *meta*                             | Schedule (every 15 min)     | **The orchestrator.** Runs W2 → W3 → W1 in sequence via `executeWorkflow` (wait=true). This is the *only* workflow you activate — it serializes the other three so they never race on `.sync-state.json`. |
-| **W1**| Obsidian → Notion + Morgen         | Called by W0 (GitHub push trigger present but dormant in default install) | Parses changed `TASKS-*.md` files, creates / updates / archives rows in Notion, creates / updates / closes tasks in Morgen. |
-| **W2**| Morgen → Obsidian                  | Called by W0                | Polls Morgen tasks. On a `closed` task, commits `- [x]` back to the source markdown file. |
-| **W3**| Notion → Obsidian                  | Called by W0                | Polls Notion for rows where Status changed to Done or Due/Scheduled changed. Commits the change back to the source markdown file. |
+| **W0**| *meta*                             | Schedule (every 20 min)     | **The orchestrator.** Runs W2 → W1 in sequence via `executeWorkflow` (wait=true). This is the *only* workflow you activate — it serializes the others so they never race on `.sync-state.json`. |
+| **W1**| Obsidian → Morgen                  | Called by W0 (GitHub push trigger present but dormant in default install) | Parses changed `TASKS-*.md` files, creates / updates / closes tasks in Morgen. Mints `🆔 m-XXXXXXXX` IDs in Obsidian for new tasks. |
+| **W2**| Morgen → Obsidian                  | Called by W0                | Polls Morgen tasks. On a `closed` task, commits `- [x]` back to the source markdown file. On new Morgen-origin tasks, appends them to the right `TASKS-{AREA}.md`. |
 
 > **Why an orchestrator?** Three independent 15-min cron triggers race each other and can interleave commits — W1 mid-run clobbers a `.sync-state.json` update from W2, or vice versa. The orchestrator sequences `pull from Morgen → pull from Notion → push merged state to both` so the state file mutates serially. If you really want the un-sequenced version (e.g. you're self-hosting and have your own scheduling), pass `SKIP_ORCHESTRATOR=1` to the installer and leave W1/W2/W3's own triggers active.
 >
@@ -233,9 +235,6 @@ task-maxxing/
 │   ├── W0-orchestrator-sync-sequencer.json  Sequences W2 → W3 → W1 every 15 min
 │   ├── W1-obsidian-git-task-sync.json       n8n export (called by W0)
 │   ├── W2-morgen-task-completion-sync.json  n8n export (called by W0)
-│   └── W3-notion-done-to-obsidian-sync.json n8n export (called by W0)
-├── notion/
-│   └── tasks-db-schema.md Copy-pasteable database schema for Notion
 ├── scripts/
 │   ├── morgen-backfill.js       One-time tag/ID backfill
 │   ├── sync-e2e-tests.js        End-to-end smoke tests

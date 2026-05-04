@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 #
-# install-workflows.sh — import W1/W2/W3 + the W0 sync-orchestrator into an
+# install-workflows.sh — import W1/W2 + the W0 sync-orchestrator into an
 # n8n instance after substituting placeholders with real tokens from env vars.
 #
-# The orchestrator sequences W2 → W3 → W1 every 15 min via executeWorkflow
+# The orchestrator sequences W2 → W1 every 20 min via executeWorkflow
 # (wait=true) so the three sub-workflows never race each other on the shared
-# .sync-state.json file. After the script captures real W1/W2/W3 workflow IDs
+# .sync-state.json file. After the script captures real W1/W2 workflow IDs
 # from the n8n API, it templates them into W0 before posting it last.
 #
 # Required env vars:
-#   GITHUB_TOKEN          OAuth/PAT used by W1/W3 (fine-grained PAT ok)
-#   NOTION_TOKEN          Notion internal integration token ("ntn_…")
+#   GITHUB_TOKEN          OAuth/PAT used by W1 (fine-grained PAT ok)
 #   MORGEN_KEY            Morgen API key (used as "ApiKey <key>")
-#   NOTION_DATABASE_ID    Target Notion database ID (with or without dashes).
 #   GITHUB_REPO_OWNER     The GitHub user/org that owns the task-mirror repo
 #   GITHUB_REPO_NAME      The name of the task-mirror repo
 #   N8N_API_KEY           Your n8n public API key
@@ -25,16 +23,16 @@
 #
 # Optional knobs:
 #   DRY_RUN=1             Render substituted JSON to $TMPDIR, do not POST.
-#   SKIP_ORCHESTRATOR=1   Only import W1/W2/W3 (advanced — you're wiring
-#                         your own scheduling and accept that W1/W2/W3 can
+#   SKIP_ORCHESTRATOR=1   Only import W1/W2 (advanced — you're wiring
+#                         your own scheduling and accept that W1/W2 can
 #                         race on .sync-state.json).
 #
 # After import, activate ONLY the W0-Sync-Orchestrator in the n8n UI.
-# Leave W1/W2/W3 inactive — the orchestrator calls them directly.
+# Leave W1/W2 inactive — the orchestrator calls them directly.
 #
 # ⚠️  Not idempotent.  n8n's POST /workflows endpoint creates a NEW workflow
 # on every call (no upsert by name). Re-running this script doubles your
-# workflow set. If you need to re-import, delete the previous W0/W1/W2/W3
+# workflow set. If you need to re-import, delete the previous W0/W1/W2
 # in the n8n UI first.
 
 set -euo pipefail
@@ -61,9 +59,7 @@ cleanup_on_error() {
 trap cleanup_on_error ERR
 
 : "${GITHUB_TOKEN:?GITHUB_TOKEN env var required}"
-: "${NOTION_TOKEN:?NOTION_TOKEN env var required}"
 : "${MORGEN_KEY:?MORGEN_KEY env var required}"
-: "${NOTION_DATABASE_ID:?NOTION_DATABASE_ID env var required}"
 : "${N8N_API_KEY:?N8N_API_KEY env var required}"
 
 : "${N8N_BASE_URL:?N8N_BASE_URL env var required (e.g. https://your-tenant.app.n8n.cloud)}"
@@ -103,7 +99,6 @@ WF_DIR="${REPO_ROOT}/workflows"
 WORKFLOWS=(
   "W1:W1-obsidian-git-task-sync.json"
   "W2:W2-morgen-task-completion-sync.json"
-  "W3:W3-notion-done-to-obsidian-sync.json"
 )
 
 escape_sed() {
@@ -111,9 +106,7 @@ escape_sed() {
 }
 
 GH_E="$(escape_sed "${GITHUB_TOKEN}")"
-NOTION_E="$(escape_sed "${NOTION_TOKEN}")"
 MORGEN_E="$(escape_sed "${MORGEN_KEY}")"
-NOTION_DB_E="$(escape_sed "${NOTION_DATABASE_ID}")"
 GH_REPO_E="$(escape_sed "${GITHUB_REPO}")"
 GH_OWNER_E="$(escape_sed "${GITHUB_OWNER}")"
 GH_REPO_NAME_E="$(escape_sed "${GITHUB_REPO_NAME}")"
@@ -135,11 +128,7 @@ for pair in "${WORKFLOWS[@]}"; do
   : > "${rendered}"
 
   sed \
-    -e "s|{{GITHUB_TOKEN}}|${GH_E}|g" \
-    -e "s|{{NOTION_TOKEN}}|${NOTION_E}|g" \
-    -e "s|{{MORGEN_KEY}}|${MORGEN_E}|g" \
-    -e "s|{{NOTION_DATABASE_ID}}|${NOTION_DB_E}|g" \
-    -e "s|{{GITHUB_REPO}}|${GH_REPO_E}|g" \
+    -e "s|{{GITHUB_TOKEN}}|${GH_E}|g" \    -e "s|{{MORGEN_KEY}}|${MORGEN_E}|g" \    -e "s|{{GITHUB_REPO}}|${GH_REPO_E}|g" \
     -e "s|{{GITHUB_OWNER}}|${GH_OWNER_E}|g" \
     -e "s|{{GITHUB_REPO_NAME}}|${GH_REPO_NAME_E}|g" \
     "${src}" > "${rendered}"
@@ -186,8 +175,8 @@ SKIP_ORCHESTRATOR="${SKIP_ORCHESTRATOR:-0}"
 
 # ---------------------------------------------------------------------------
 # W0 — Sync Orchestrator
-# Sequences W2 → W3 → W1 every 15 min via executeWorkflow(wait=true).
-# Imported last because it needs the real W1/W2/W3 workflow IDs assigned by
+# Sequences W2 → W1 every 20 min via executeWorkflow(wait=true).
+# Imported last because it needs the real W1/W2 workflow IDs assigned by
 # n8n in the loop above (or from a DRY_RUN placeholder).
 # ---------------------------------------------------------------------------
 
@@ -202,19 +191,15 @@ else
 
   W1_ID="${CREATED_IDS[0]}"
   W2_ID="${CREATED_IDS[1]}"
-  W3_ID="${CREATED_IDS[2]}"
 
   W1_ID_E="$(escape_sed "${W1_ID}")"
   W2_ID_E="$(escape_sed "${W2_ID}")"
-  W3_ID_E="$(escape_sed "${W3_ID}")"
 
   orch_rendered="$(mktemp -t W0.rendered.XXXXXX).json"
   : > "${orch_rendered}"
   sed \
     -e "s|{{W1_WORKFLOW_ID}}|${W1_ID_E}|g" \
-    -e "s|{{W2_WORKFLOW_ID}}|${W2_ID_E}|g" \
-    -e "s|{{W3_WORKFLOW_ID}}|${W3_ID_E}|g" \
-    "${ORCH_SRC}" > "${orch_rendered}"
+    -e "s|{{W2_WORKFLOW_ID}}|${W2_ID_E}|g" \    "${ORCH_SRC}" > "${orch_rendered}"
 
   if grep -q '{{[A-Z_]*}}' "${orch_rendered}"; then
     echo "[install-workflows] ERROR: unreplaced placeholders in orchestrator:" >&2
@@ -274,18 +259,18 @@ for i in "${!CREATED_IDS[@]}"; do
 done
 echo
 if [[ "${SKIP_ORCHESTRATOR}" == "1" ]]; then
-  echo "  NEXT: SKIP_ORCHESTRATOR=1 — you asked for bare W1/W2/W3 with their own"
-  echo "  schedule triggers. Activate them in this order:  W1 → W3 → W2"
-  echo "  (W1 is the fast push-based path, W3 guards Notion edits, W2 sweeps Morgen.)"
+  echo "  NEXT: SKIP_ORCHESTRATOR=1 — you asked for bare W1/W2 with their own"
+  echo "  schedule triggers. Activate them in this order:  W1 → W2"
+  echo "  (W1 is the fast push-based path, W2 sweeps Morgen.)"
 else
   echo "  NEXT: activate ONLY the ${ORCH_NAME} in the n8n UI."
-  echo "  Leave W1/W2/W3 inactive — the orchestrator triggers them directly"
+  echo "  Leave W1/W2 inactive — the orchestrator triggers them directly"
   echo "  via executeWorkflow so they never race each other on the shared"
   echo "  .sync-state.json file."
 fi
 echo
 echo "  ⚠️  Re-running this script creates DUPLICATE workflows — n8n's API"
 echo "  does not upsert by name. If you need to reinstall, delete the"
-echo "  existing W0/W1/W2/W3 in the n8n UI (or via DELETE /api/v1/workflows/<id>)"
+echo "  existing W0/W1/W2 in the n8n UI (or via DELETE /api/v1/workflows/<id>)"
 echo "  before running again, or you will end up with two copies of each."
 echo "====================================================================="
