@@ -1,642 +1,468 @@
 # Architecture
 
-> [!IMPORTANT]
-> **2026-05-04 cutover:** This doc was written for the original three-way
-> Obsidian ↔ Notion ↔ Morgen pipeline. The kit is now **two-way Obsidian ↔
-> Morgen** — W3 (Notion → Obsidian) is removed and W1 no longer makes
-> Notion API calls. Sections describing Notion routing or the W3 worker
-> are historical context. Orchestrator graph is now `Every 20m → W2 → W1`.
-> See [CHANGELOG.md](../CHANGELOG.md). A full rewrite is queued.
+How the kit actually works. If you just want it running, see [SETUP.md](SETUP.md). If you want to understand the invariants well enough to debug or fork it, you're in the right place.
 
-This document explains how task-maxxing actually works. If you just want to get it
-running, jump to [SETUP.md](SETUP.md). If you want to understand the invariants so you
-can debug it (or fork it), you're in the right place.
+---
+
+## TL;DR (30 seconds)
+
+- **What it does.** Keeps your tasks in sync, two ways, between **Obsidian markdown** (your `06-Tasks/` folder) and **Morgen** (the calendar that auto-schedules your day).
+- **What it solves.** Edit a task in either place — tick it off on your phone in Morgen, or rewrite the date in Obsidian — and the other side catches up on the next 20-minute tick. No manual double-entry, no SaaS lock-in, no proprietary file formats.
+- **What you get after install.** A local launchd daemon that commits vault edits to a private GitHub repo, two n8n workflows (`W1`, `W2`) sequenced by an orchestrator (`W0`) every 20 minutes, a watchdog workflow that opens an issue if the sync goes silent, and a `.sync-state.json` file that carries the cross-app identity map.
+- **What's canonical.** Your markdown. Always. Morgen is a regenerated mirror — if it disagrees with the vault, the vault wins.
+
+> **Heads up — this kit went 2-way in May 2026.** It used to be a 3-way Obsidian ↔ Notion ↔ Morgen sync. Notion was dropped 2026-05-04. Everywhere below describes the **current** 2-way state. The Notion era is summarized at the bottom under [What changed in May 2026](#what-changed-in-may-2026-notion-drop).
 
 ---
 
 ## Table of contents
 
-1. [System overview](#system-overview)
-2. [The three workflows](#the-three-workflows)
-3. [Source of truth](#source-of-truth)
-4. [Hashing strategy](#hashing-strategy)
-5. [The `.sync-state.json` file](#the-sync-statejson-file)
-6. [Conflict resolution](#conflict-resolution)
-7. [Safety rails](#safety-rails)
-8. [Morgen API quirks](#morgen-api-quirks)
-9. [Notion database schema](#notion-database-schema)
-10. [Alternatives and why we didn't pick them](#alternatives-considered)
+1. [System diagram](#system-diagram)
+2. [Source of truth](#source-of-truth)
+3. [Component reference](#component-reference)
+   - [Local daemon](#local-daemon)
+   - [W0 — Sync Orchestrator](#w0--sync-orchestrator)
+   - [W1 — Obsidian → Morgen](#w1--obsidian--morgen)
+   - [W2 — Morgen → Obsidian](#w2--morgen--obsidian)
+   - [Sync-Health-Watchdog](#sync-health-watchdog)
+4. [The `.sync-state.json` file](#the-sync-statejson-file)
+5. [The bot-prefix echo guard](#the-bot-prefix-echo-guard)
+6. [Hashing and task identity](#hashing-and-task-identity)
+7. [Conflict resolution](#conflict-resolution)
+8. [Tradeoffs](#tradeoffs)
+9. [What changed in May 2026 (Notion drop)](#what-changed-in-may-2026-notion-drop)
 
 ---
 
-## System overview
+## System diagram
 
-task-maxxing has **three moving parts** and one **state file**.
+The production graph is one orchestrator firing two child workflows in series, every 20 minutes, plus a separate hourly watchdog.
 
 ```
-                 ┌────────────────────┐
-                 │   OBSIDIAN VAULT   │  <── You edit markdown here
-                 │   06-Tasks/*.md    │
-                 │   .sync-state.json │
-                 └──────┬─────────────┘
-                        │
-                        │  [local daemon]
-                        │  debounced file watch
-                        │  git add / commit / push
-                        ▼
-              ┌─────────────────────┐
-              │  GitHub tasks repo  │  (a mirror, not your vault)
-              │  webhooks on push   │
-              └──────┬──────────────┘
-                     │
-                     │  webhook
-                     ▼
-            ┌───────────────────┐
-            │   n8n (cloud or   │
-            │   self-hosted)    │
-            │                   │
-            │   W1  Obsidian →  │───► Notion Tasks DB
-            │       Notion &    │───► Morgen tasks (inbox)
-            │       Morgen      │
-            │                   │
-            │   W2  Morgen →    │◄─── Morgen (closed tasks)
-            │       Obsidian    │───► GitHub (commit .md)
-            │                   │
-            │   W3  Notion →    │◄─── Notion (Done / dates)
-            │       Obsidian    │───► GitHub (commit .md)
-            └───────────────────┘
-                     │
-                     │  git pull
-                     ▼
-             back into vault
+                              ┌────────────────────────────┐
+                              │      OBSIDIAN VAULT        │  <── you edit markdown here
+                              │      06-Tasks/*.md         │
+                              │      .sync-state.json      │
+                              └─────────────┬──────────────┘
+                                            │
+                                  [local launchd daemon]
+                                  debounced file watch
+                                  git add / commit / push
+                                            │
+                                            ▼
+                              ┌────────────────────────────┐
+                              │  GitHub: tasks mirror repo │  (e.g. YOUR-VAULT-tasks)
+                              │  main branch, push-based   │
+                              └─────────────┬──────────────┘
+                                            │  GitHub Tree + Contents API
+                                            ▼
+   ┌───────────────────────────────────────────────────────────────────────────┐
+   │                                  n8n                                      │
+   │                                                                           │
+   │   ┌─────────────────────────────────────────────────────────────┐         │
+   │   │  W0 — Sync Orchestrator       (Schedule: every 20 min)      │         │
+   │   │                                                             │         │
+   │   │     executeWorkflow W2  (wait=true)                         │         │
+   │   │           │                                                 │         │
+   │   │           ▼                                                 │         │
+   │   │     executeWorkflow W1  (wait=true)                         │         │
+   │   └─────────────────────────────────────────────────────────────┘         │
+   │              │                                  │                         │
+   │              ▼                                  ▼                         │
+   │   ┌─────────────────────┐          ┌─────────────────────────────┐        │
+   │   │  W2 — Morgen        │          │  W1 — Obsidian → Morgen     │        │
+   │   │       → Obsidian    │          │  parses TASKS-*.md, upserts │        │
+   │   │  6 directions:      │          │  via Morgen REST API        │        │
+   │   │   • complete        │          │  mints 🆔 m-XXXXXXXX        │        │
+   │   │   • edit-text       │          │  bot-prefix echo guard ────┐│        │
+   │   │   • soft-delete     │          │                            ││        │
+   │   │   • new task        │          │                            ││        │
+   │   │   • cev_ complete   │          │                            ││        │
+   │   │   • cev_ discovery  │          │                            ││        │
+   │   └──────────┬──────────┘          └─────────────┬──────────────┘│        │
+   │              │ [bot:W2] commits                  │ [bot:W1]      │        │
+   │              │ via GitHub Contents API           │ commits to    │        │
+   │              ▼                                   ▼ state file    │        │
+   └───────────────────────────────────────────────────────────────────┼───────┘
+                  │                                   │                │
+                  ▼                                   ▼                │
+        ┌────────────────────────┐       ┌────────────────────────┐    │
+        │  GitHub tasks mirror   │◄──────┤        Morgen          │    │
+        │  (commits land here,   │       │  /v3/tasks REST API    │────┘
+        │   daemon pulls back    │       │  (inbox list only)     │
+        │   into vault)          │       └────────────────────────┘
+        └────────────────────────┘
+
+   ┌───────────────────────────────────────────────────────────────────────────┐
+   │  Sync-Health-Watchdog        (Schedule: every hour, independent of W0)    │
+   │                                                                           │
+   │   GitHub commits API → if no [bot:W1] commit in last 60 min               │
+   │                        → open GitHub issue + (optional) Telegram alert    │
+   │                        → on recovery: auto-close                          │
+   └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-### The state file
+Two important properties of that picture:
 
-`.sync-state.json` lives at the root of your 06-Tasks mirror and holds everything the
-system needs to know about every task. It is the "glue" between the three apps —
-without it, no workflow can tell whether a row in Notion corresponds to an existing
-markdown task or a new one to be created.
-
-It's produced by the daemon during parsing, consumed by all three workflows, and
-updated by all of them. The schema is documented below.
-
-### The daemon
-
-A small zero-dependency Node script (`src/auto-commit.js`) invoked by launchd on
-every markdown edit inside your vault's `06-Tasks/` directory. Its job is tiny and
-it runs as a **one-shot per tick** — no long-running file watcher, no chokidar:
-
-1. launchd fires the agent whenever a file under `WatchPaths` changes, subject to a
-   30-second `ThrottleInterval` plus a 5-minute `StartInterval` heartbeat so the
-   daemon runs at least once every five minutes even if nothing fires WatchPaths.
-2. The script does an FDA preflight — it tries to read `${VAULT}/.git/HEAD` and
-   exits with an explicit "grant Full Disk Access to the Node binary at X" error
-   if macOS TCC blocks the read.
-3. If the git working tree is clean, it exits 0 (no-op).
-4. Otherwise it runs `git add -A`, then `git commit -m "[bot:daemon] auto: task
-   edit <ISO-8601-UTC>"`, then `git push origin main`.
-5. Every outcome (clean tick, commit, push, error) is appended to
-   `~/Library/Logs/task-maxxing.log` plus a heartbeat file next to it.
-
-The daemon does **not** parse markdown, talk to Notion, talk to Morgen, or
-regenerate `.sync-state.json`. It only talks to git. The state file is owned by
-`scripts/morgen-backfill.js` (initial seed), then by W1/W2/W3 (runtime updates) —
-the daemon's job is simply to pick up whichever file set changed in the working
-tree and push it.
-
-The `[bot:daemon]` commit prefix is load-bearing: W1's echo-loop guard reads
-`commits[].message` on the incoming push webhook and skips the Notion+Morgen write
-phase if every commit is prefixed with one of the `[bot:*]` labels in
-`BOT_COMMIT_PREFIXES` (W1/W2/W3/backfill/daemon). Without that prefix, every
-daemon push would round-trip back through W1 and loop forever. Do not change it.
-
-For the full installer walkthrough (building the `.app` wrapper, granting Full
-Disk Access, loading the LaunchAgent) see `daemon/README.md`.
-
----
-
-## The three workflows
-
-### W1 — Obsidian → Notion + Morgen
-
-**Trigger:** GitHub push webhook on the tasks mirror repo.
-
-**Flow:**
-
-1. Webhook fires on `push` to main.
-2. n8n clones (shallow) the repo and reads the incoming `.sync-state.json`.
-3. For every task in state, it diffs against the **previous** state stored in n8n's
-   workflow static data (`workflowStaticData.global.lastSyncedState`).
-4. Produces a list of operations:
-   - `create` — task is new; not in previous state.
-   - `update` — task hash changed.
-   - `archive` — task was in previous state, now gone from markdown.
-   - `noop` — hash unchanged.
-5. Batches operations per service:
-   - **Notion:** for each op, calls `POST /v1/pages` (create), `PATCH /v1/pages/:id`
-     (update), or `PATCH` with `archived: true` (archive). Throttled to 3 req/s.
-   - **Morgen:** for each op, calls `POST /v3/tasks/create`, `POST /v3/tasks/update`,
-     or `POST /v3/tasks/close`. (Morgen exposes close semantics, not delete — there
-     is no `/v3/tasks/delete` endpoint.) Throttled to stay well under the 300 points
-     / 15 min Morgen ceiling (raised from 100 on 2026-04-15; cost per op verified
-     via live probe 2026-04-18: create = 1 pt, list = 10 pts).
-6. On success, writes the updated `{notionPageId, morgenTaskId, morgenEtag, lastSyncedAt, lastSyncedHash}`
-   fields back into `.sync-state.json` via a GitHub contents API commit (with a
-   `[bot:W1]` commit prefix so the daemon and W1 don't echo-loop).
-
-**Rate budget:** capped at 100 Notion ops + 100 Morgen ops per run. If you exceed the
-budget, W1 stops, logs a warning, and the next push picks up the remainder.
-
-**Timeout:** 60 seconds total. If W1 is ever taking longer, either you're doing a
-backfill (run the backfill script manually) or your Notion throttle is too low.
-
-### W2 — Morgen → Obsidian
-
-**Trigger:** 60-second cron.
-
-**Flow:**
-
-1. Pulls the current `.sync-state.json` from GitHub.
-2. `GET /v3/tasks?taskListId=inbox` and builds a map `morgenTaskId → task`.
-3. For each task in `.sync-state.json` that has a `morgenTaskId`:
-   - If the Morgen task is `closed` AND `.sync-state.json` says it was open, mark
-     the markdown line as `- [x]`.
-   - If the Morgen `updatedAt` > `.sync-state.json.lastSyncedAt` AND any of
-     `dueDate`, `scheduledDate`, `priority`, `text` changed, propagate those to
-     the markdown task.
-4. Writes a single commit to GitHub with all markdown edits, message `[bot:W2] morgen sync`.
-5. Updates `.sync-state.json` with new `lastSyncedAt` and `lastSyncedHash` for each
-   edited task.
-
-**Why not push direct to a file?** n8n cloud can't ssh into your Mac, so we go through
-git. This also gives us free history.
-
-### W3 — Notion → Obsidian
-
-**Trigger:** 60-second cron.
-
-**Flow:** Same shape as W2, but the source is Notion.
-
-1. Pulls `.sync-state.json`.
-2. `POST /v1/databases/:id/query` with filter `last_edited_time > lastSyncedAt of
-   latest task`.
-3. For each changed row, look up `notionPageId → task` in state.
-4. Diff Notion properties against markdown:
-   - `Status` → `Done` flips the checkbox to `- [x]`.
-   - `Priority` change → emoji swap (`highest` / `high` / `medium` / `low` / `lowest`).
-   - `Due` change → `📅 YYYY-MM-DD`.
-   - `Scheduled` change → `⏳ YYYY-MM-DD`.
-5. Commits all edits to the GitHub mirror with message `[bot:W3] notion sync`.
-6. Updates `.sync-state.json`.
-
-### Edge paths
-
-There are three edges that don't map cleanly to W1/W2/W3 and are worth calling out:
-
-- **Notion → Morgen:** handled *through* Obsidian. W3 writes the change to markdown,
-  the daemon pushes, W1 picks it up and writes it to Morgen. Latency: ~90s.
-- **Morgen → Notion:** same shape. W2 → daemon → W1. Latency: ~90s.
-- **Delete:** deleting a markdown line removes the task from both mirrors on the next
-  W1 run. Deleting a Notion row or Morgen task does **not** propagate; the next
-  W1 sync will re-create them because markdown is canonical.
+1. **Sequencing, not parallelism.** W0 runs W2 *then* W1 with `wait=true`. Two independent cron triggers would race each other on `.sync-state.json` and produce interleaved commits. W0 makes the state file mutate serially.
+2. **n8n cloud never touches your disk.** Everything moves through the GitHub API. The local daemon is the only process with filesystem access — this lets W2 write back to your vault as plain commits and keeps your machine out of n8n's trust boundary.
 
 ---
 
 ## Source of truth
 
-**Obsidian is canonical. Notion and Morgen are mirrors.**
+**Obsidian is canonical. Morgen is a mirror.**
 
-Every invariant in the system comes from this single rule. If Obsidian disagrees with
-Notion, Obsidian wins. If Obsidian disagrees with Morgen, Obsidian wins. If all three
-disagree, Obsidian wins.
+Every invariant in the system follows from that one rule:
 
-The only exception is **last-writer-wins** on a three-way tie where the Obsidian state
-was known to be stale — see [Conflict resolution](#conflict-resolution).
-
-### Why Obsidian?
-
-- **Durability.** Markdown in git will still be readable in 20 years. Notion's API
-  won't.
-- **Editability.** A plain `.md` file can be edited from vim, the Obsidian app, a GitHub
-  web UI, a phone app, a shell script, or a parent LLM agent. Notion and Morgen can
-  only be edited through their own clients.
-- **Queryability.** Obsidian's Tasks plugin already gives you rich filters, sort,
-  group-by-path, etc. We don't need to re-invent that UI.
-- **Backup story.** Every commit is a backup. Every fork of the tasks mirror is a
-  backup. You can't delete the vault by clicking the wrong button.
-
-### What "canonical" actually means in code
-
-1. When W1 runs, it diffs the committed markdown against `.sync-state.json` and
-   propagates **every** difference to Notion and Morgen. If Notion has a newer field
-   that isn't in markdown, Notion loses.
-2. W2 and W3 only ever propagate `closed / done / date changes` — they don't propagate
-   arbitrary field rewrites. This keeps the graph pointing Obsidian-ward.
-3. If `.sync-state.json` ever gets corrupted (delete / conflict / bad merge), the fix
-   is always "delete it and re-run the backfill script" — which rebuilds state from
-   the markdown, because **the markdown is canonical**.
+- If Obsidian and Morgen disagree on text, dates, or priority, **Obsidian wins**. W1 will overwrite Morgen on the next tick.
+- If `.sync-state.json` is corrupted or lost, the fix is always "delete it and re-seed from markdown" — because the markdown is canonical, the state file is recoverable from it.
+- W2 only propagates a narrow set of changes back into markdown (completion, soft-delete, new-task discovery, calendar-event linkage). It never propagates arbitrary field rewrites. This keeps the gradient pointed Obsidian-ward.
+- Markdown-as-canonical means your data survives every tool in this stack getting acquired, deprecated, or rate-limited into uselessness. Worst case, you turn off n8n and you still have a folder of `.md` files in git.
 
 ---
 
-## Hashing strategy
+## Component reference
 
-Every task gets a stable identity hash computed from its markdown-relevant fields.
-The canonical implementation is `computeTaskHash` in `src/sync-helpers.js`:
+### Local daemon
 
-```javascript
-// src/sync-helpers.js (excerpted)
-const crypto = require('crypto');
+**Type:** zero-dep Node script (`src/auto-commit.js`) invoked by macOS `launchd`.
 
-function computeTaskHash(input) {
-  const i = input || {};
-  const parts = [
-    String(i.sourceFile || ''),                        // "TASKS-URGENT.md"
-    String(i.text || ''),                              // plain task text
-    String(parseInt(i.priority, 10) || 0),             // int: 1/2/5/7/9/0
-    (i.due == null ? '' : String(i.due)).slice(0, 10), // "YYYY-MM-DD" or ""
-    (i.scheduled == null ? '' : String(i.scheduled)).slice(0, 10),
-  ];
-  return crypto
-    .createHash('sha256')
-    .update(parts.join('::'))
-    .digest('hex')
-    .slice(0, 24);
-}
-```
+**Trigger:**
+- `WatchPaths` on `06-Tasks/**` (debounced via `ThrottleInterval=30s`).
+- `StartInterval=300s` heartbeat so it runs at least every 5 minutes even when nothing fires.
 
-**Priority is an integer, not a string.** The Obsidian Tasks plugin's emoji map to
-this integer ladder (from `PRIORITY_EMOJI_TO_INT`): 🔺=1 (highest), ⏫=2 (high),
-🔼=5 (medium), 🔽=7 (low), ⏬=9 (lowest), none=0. The Morgen and Notion sides
-reuse the same integer so the mapping is lossless across all three apps.
+**What it does:**
+1. Full Disk Access preflight — reads `${VAULT}/.git/HEAD`. If macOS TCC blocks it, exits with an explicit "grant FDA to the Node binary at X" error and prints the path.
+2. If the working tree is clean, exits 0.
+3. Otherwise: `git add -A` → `git commit -m "[bot:daemon] auto: task edit <ISO-8601-UTC>"` → `git push origin main`.
+4. Appends every outcome (clean tick, commit, push, error) to `~/Library/Logs/task-maxxing.log` plus a heartbeat file.
 
-**Why 24 hex chars?** 96 bits of collision resistance is fine for a single user's task
-backlog (N < 10k tasks indefinitely). It's also short enough to eyeball in logs and git
-commits.
+**What it does NOT do:** parse markdown, talk to Morgen, regenerate `.sync-state.json`. It only talks to git. The state file is owned by `scripts/morgen-backfill.js` for the initial seed and by W1/W2 at runtime.
 
-**Why include `sourceFile`?** So that the same text "Ship task-maxxing" in
-`TASKS-LORECRAFT.md` and `TASKS-URGENT.md` counts as two distinct tasks. If you move a
-task between files, W1 sees it as `archive + create`, not `update`. That's intentional
-— it keeps the hash stable under in-file edits but lets us route area membership
-properly.
+**Failure modes:**
+- macOS TCC denies disk read → daemon errors loudly, install instructions printed to log.
+- Network down on push → next heartbeat retries; commits queue locally.
+- Non-`[bot:*]` commits from a misbehaving editor → would round-trip through W1 and loop forever, except the [bot-prefix echo guard](#the-bot-prefix-echo-guard) skips them.
 
-**Why not include the line number?** Because you can re-order tasks in a file without
-semantic change. The hash should be order-independent within a file.
+Full installer walkthrough lives in [`daemon/README.md`](../daemon/README.md).
 
-### When the hash changes
+---
 
-A hash change is the system's "this task was edited" signal. The hash changes if and
-only if:
+### W0 — Sync Orchestrator
 
-- the task text changed
-- the priority changed
-- the due date changed
-- the scheduled date changed
-- the task moved to a different file
+**Workflow file:** `workflows/W0-orchestrator-sync-sequencer.json`.
 
-**Completion state is NOT in the hash.** Completion is tracked separately via
-`task.completed` (boolean) so that closing a task doesn't look like "edit the task
-text" to the diff engine.
+**Trigger:** n8n Schedule node, every **20 minutes**.
+
+**Inputs:** none — it's a cron-driven coordinator.
+
+**What it does:**
+1. `executeWorkflow` W2 (`wait=true`).
+2. `executeWorkflow` W1 (`wait=true`).
+
+That's the entire workflow. The only thing it owns is the run order.
+
+**Why an orchestrator at all?** Because two independent cron triggers can interleave. Without W0, W1 mid-run can clobber a `.sync-state.json` update from W2, or vice versa, and you end up with phantom completions, lost edits, or duplicate Morgen tasks. W0 serializes them: pull from Morgen first, then push the merged state out.
+
+**The only workflow you activate.** W1 and W2 stay inactive in the n8n UI; W0 calls them directly. If you also activate W1 or W2, you'll get double-fires — n8n handles duplicate work cheaply because the workflows are diff-aware, but you're burning Morgen rate budget for no reason.
+
+**Self-overlap quirk.** n8n's Schedule trigger does NOT skip-if-running. If a 20-minute tick fires while the previous W0 is still executing (possible during a large backfill), the second W0 queues up and starts immediately after — which re-introduces the very race W0 was built to prevent. In practice a full W2 + W1 cycle finishes in well under 60 seconds, so the overlap window is tiny. If you see overlap, bump W0 to every 30 minutes.
+
+**Failure modes:**
+- W2 errors → W0 stops, W1 doesn't run that tick. State stays consistent because no Morgen writes happened.
+- W1 errors after W2 succeeded → W2's writeback is committed, W1 retries on the next tick.
+- Both error → watchdog fires after 60 minutes (see below).
+
+---
+
+### W1 — Obsidian → Morgen
+
+**Workflow file:** `workflows/W1-obsidian-git-task-sync.json`.
+
+**Trigger:** Called by W0 via `executeWorkflow`. (A GitHub push trigger is present in the workflow JSON but **dormant in the default install** — leave it inactive unless you opt out of the orchestrator with `SKIP_ORCHESTRATOR=1`.)
+
+**Inputs:**
+- The current contents of `06-Tasks/**/TASKS-*.md` from the GitHub mirror (read via Tree API).
+- The current `.sync-state.json` from the same repo.
+- The previous synced state from `workflowStaticData.global.lastSyncedState`.
+
+**What it does:**
+1. Pulls every `TASKS-*.md` file from the mirror via the GitHub Tree API.
+2. Parses each task line. Grammar:
+
+   ```
+   - [ ] task text <priority?> 📅 YYYY-MM-DD <🔁 recurrence?> 🆔 m-XXXXXXXX
+   ```
+
+   Priorities: 🔺 highest · ⏫ high · 🔼 medium · 🔽 low · ⏬ lowest. Dates: 📅 due · ⏳ scheduled · 🛫 start · ✅ done · ❌ cancelled. The `🆔` is the stable join key.
+
+3. Computes a hash per task (see [Hashing and task identity](#hashing-and-task-identity)).
+4. Diffs against the previous synced state and produces ops:
+   - `create` — task is new, no `🆔` yet, or 🆔 not in state.
+   - `update` — known 🆝, hash changed.
+   - `close` — known 🆔, markdown shows `- [x]`.
+   - `noop` — hash unchanged.
+5. Calls Morgen REST API:
+   - `POST /v3/tasks/create` for new tasks (returns `morgenTaskId`).
+   - `POST /v3/tasks/update` for edits.
+   - `POST /v3/tasks/close` for completions. (Morgen exposes close, not delete — there is no `/v3/tasks/delete` endpoint.)
+   - Throttled to stay under Morgen's 300 points / 15 min ceiling.
+6. **Mints `🆔 m-XXXXXXXX` for tasks that didn't have one.** New IDs use Morgen's 8-hex format (post-cutover). Legacy UUIDv4 IDs in old lines are preserved, not rewritten — the parser accepts both, only new lines get m-IDs.
+7. Writes the updated `morgenTaskId`, `morgenId` (calendar entry ID for time-blocked tasks), `lastSyncedAt`, `lastSyncedHash` back into `.sync-state.json` via a `[bot:W1]` commit on the mirror repo.
+
+**Outputs:**
+- N Morgen API calls.
+- One `[bot:W1]` commit on the tasks mirror.
+- An updated `workflowStaticData.global.lastSyncedState` for the next run's diff.
+
+**Side effects:** mints stable IDs, charges Morgen rate-limit points, produces commits on the mirror that the daemon will eventually pull back into the vault.
+
+**Failure modes:**
+- Morgen 429 rate limit → W1 logs and defers remaining ops to the next tick.
+- Morgen 409 conflict on update → one retry with refreshed etag, then defer.
+- GitHub commit fails → state file is not updated; next run's diff will look slightly larger but otherwise correct (idempotent on the markdown side, only the writeback to state is lost).
+- Push contains only `[bot:*]` commits → W1 runs but skips Morgen writes (echo guard). It still reads state, in case W2 wrote new IDs.
+
+---
+
+### W2 — Morgen → Obsidian
+
+**Workflow file:** `workflows/W2-morgen-task-completion-sync.json`.
+
+**Trigger:** Called by W0 via `executeWorkflow` (its own Schedule trigger is dormant in the default install).
+
+**Inputs:**
+- Morgen tasks via `GET /v3/tasks?taskListId=inbox&limit=500`.
+- Morgen calendar events in a rolling -7d to +30d window (37 days), via `POST /v3/events/list`. Tasks dragged onto the calendar in Morgen's UI become `cev_` calendar entries — those are the only way completion-of-time-blocks round-trips back.
+- The current `.sync-state.json` and the relevant `TASKS-*.md` files from the GitHub mirror.
+
+**What it does — six sync directions:**
+1. **Completion.** Morgen task `closed` AND state says it was open → mark `- [x]` in the source markdown file.
+2. **Edit-text.** Morgen `updatedAt` > state `lastSyncedAt` AND text/priority/dates changed → propagate to markdown (text edits only; preserves the 🆔).
+3. **Soft-delete.** Morgen task moved to trash → comment out the markdown line (preserves history, lets you un-trash from either side).
+4. **New-Morgen-task.** A Morgen task with no `morgenTaskId` in state → append a new line to the appropriate `TASKS-{AREA}.md`, choose `TASKS-GENERAL.md` if no area tag matches.
+5. **Calendar-event completion (`cev_`).** A `cev_` calendar entry is marked done in Morgen → mark its parent task `- [x]` in markdown.
+6. **Calendar-event discovery (`cev_`).** A new `cev_` entry appears for a known task → store its `morgenId` in `.sync-state.json` for future completion routing.
+
+7. After all six pass, W2 writes a **single** `[bot:W2] morgen sync` commit to the mirror via the GitHub Contents API, batching every markdown edit into one commit.
+8. Updates `lastSyncedAt` and `lastSyncedHash` for each touched task in `.sync-state.json`.
+
+**Outputs:**
+- Up to one `[bot:W2]` commit on the mirror per run.
+- Updated state file.
+
+**Side effects:** appends new lines to area files, flips checkboxes, records calendar IDs.
+
+**Failure modes:**
+- Calendar event outside the -7d/+30d window → W2 doesn't see it; events more than 30 days out are invisible until they enter the window.
+- Morgen list API silently defaults to `limit=1` if you forget to pass `limit` → W2 always passes `?limit=500`. If you ever fork this and change the list call, set the limit explicitly or you will lose tasks.
+- New-Morgen-task with no area tag → routed to `TASKS-GENERAL.md` rather than dropped.
+
+---
+
+### Sync-Health-Watchdog
+
+**Workflow ID (reference instance):** `mzpCCbqD1MvxJhAm`. The installer creates one in your n8n instance with a fresh ID.
+
+**Trigger:** Schedule node, every **1 hour**, independent of W0.
+
+**Inputs:**
+- `GET /repos/<owner>/YOUR-VAULT-tasks/commits` filtered for `[bot:W1]` author/message in the last 60 minutes.
+
+**What it does:**
+1. If at least one `[bot:W1]` commit landed in the last 60 minutes → no-op, close any open watchdog issue.
+2. If zero `[bot:W1]` commits in the last 60 minutes → open (or update) a GitHub issue titled `Sync stalled: no [bot:W1] commit in last 60 min`, optionally fire a Telegram alert if `TELEGRAM_BOT_TOKEN` is set.
+3. On recovery (next W1 commit lands), auto-close the issue with a comment.
+
+**Why this exists.** The most failure-prone parts of the kit are external (Morgen API, GitHub API, n8n cloud uptime) and the most common failure mode is "everything looks fine but nothing has actually synced for hours." The watchdog turns silent failure into loud failure.
+
+**Failure modes:**
+- Watchdog itself fails → no automatic alert. Inspect n8n executions weekly.
+- False positive during an intentional pause (e.g., you're editing markdown for an hour with no completions to round-trip) → close the issue manually; it'll re-open on the next stall.
 
 ---
 
 ## The `.sync-state.json` file
 
-Single source of truth for cross-app identity mapping. Committed to the GitHub mirror
-repo at `./sync-state.json` (note: the *mirror* strips the leading dot to avoid
-gitignore issues — this is also why your vault's `.gitignore` excludes it, so the
-working copy and the mirror can be different).
+Single source of truth for cross-app identity mapping. Lives at `06-Tasks/.sync-state.json` in your vault, mirrored to the same path in the GitHub tasks repo.
 
 ### Schema
 
 ```json
 {
-  "version": 2,
-  "generatedAt": "2026-04-14T15:33:00.000Z",
-  "generatedBy": "daemon@1.0.0",
+  "version": 3,
+  "generatedAt": "2026-05-04T15:33:00.000Z",
+  "generatedBy": "w1@2.0.0",
   "tasks": {
-    "a3f9d2c1b8e4f7a6d5c9e2b1": {
+    "<taskHash>": {
       "hash": "a3f9d2c1b8e4f7a6d5c9e2b1",
       "sourceFile": "06-Tasks/TASKS-URGENT.md",
       "sourceLine": 12,
-      "text": "Ship task-maxxing v0.1",
+      "text": "Ship task-maxxing v0.2",
       "completed": false,
       "priority": "high",
-      "priorityInt": 4,
-      "due": "2026-05-01",
-      "scheduled": "2026-04-20",
+      "priorityInt": 2,
+      "due": "2026-05-15",
+      "scheduled": "2026-05-12",
       "start": null,
       "recurrence": null,
       "tags": ["#ship"],
-      "notionPageId": "{{NOTION_PAGE_ID}}",
-      "morgenTaskId": "{{MORGEN_TASK_ID}}",
-      "morgenEtag": "W/\"1712345678\"",
-      "lastSyncedAt": "2026-04-14T15:32:00.000Z",
+      "morgenTaskId": "tsk_abc123",
+      "morgenId": "cev_xyz789",
+      "morgenEtag": "W/\"1715000000\"",
+      "obsidianId": "m-1a2b3c4d",
+      "lastSyncedAt": "2026-05-04T15:32:00.000Z",
       "lastSyncedHash": "a3f9d2c1b8e4f7a6d5c9e2b1",
-      "lastSyncedBy": "w1"
+      "lastSyncedBy": "w1",
+      "notionPageId": null
     }
   },
-  "byNotionId": {
-    "{{NOTION_PAGE_ID}}": "a3f9d2c1b8e4f7a6d5c9e2b1"
-  },
-  "byMorgenId": {
-    "{{MORGEN_TASK_ID}}": "a3f9d2c1b8e4f7a6d5c9e2b1"
-  }
+  "byMorgenId": { "tsk_abc123": "a3f9d2c1b8e4f7a6d5c9e2b1" },
+  "byObsidianId": { "m-1a2b3c4d": "a3f9d2c1b8e4f7a6d5c9e2b1" }
 }
 ```
 
-### Field guide
+### Field guide (current fields only)
 
-| Field                     | Who writes it    | Purpose                                                       |
-|---------------------------|------------------|---------------------------------------------------------------|
-| `version`                 | daemon           | Schema version. Bump on breaking change.                      |
-| `generatedAt`             | daemon           | ISO timestamp of the last full parse.                         |
-| `generatedBy`             | daemon           | Build version of the daemon that wrote this state.            |
-| `tasks`                   | daemon           | Map keyed by task hash.                                       |
-| `tasks.<h>.hash`          | daemon           | Same as the key. Duplicated for convenience.                  |
-| `tasks.<h>.sourceFile`    | daemon           | Path relative to vault root.                                  |
-| `tasks.<h>.sourceLine`    | daemon           | 1-indexed line number. Informational only.                    |
-| `tasks.<h>.text`          | daemon           | Plain task text, emoji + metadata stripped.                   |
-| `tasks.<h>.completed`     | daemon + W2/W3   | Completion checkbox state.                                    |
-| `tasks.<h>.priority`      | daemon           | One of `highest / high / medium / low / lowest / none`.       |
-| `tasks.<h>.priorityInt`   | daemon           | Numeric priority for ordering + hashing.                      |
-| `tasks.<h>.due`           | daemon           | `YYYY-MM-DD` or null.                                         |
-| `tasks.<h>.scheduled`     | daemon           | `YYYY-MM-DD` or null.                                         |
-| `tasks.<h>.start`         | daemon           | `YYYY-MM-DD` or null (start date).                            |
-| `tasks.<h>.recurrence`    | daemon           | Raw recurrence string (e.g. `every week`).                    |
-| `tasks.<h>.tags`          | daemon           | Array of `#tag` strings.                                      |
-| `tasks.<h>.notionPageId`  | W1               | ID of the corresponding Notion page. Null until W1 creates.   |
-| `tasks.<h>.morgenTaskId`  | W1               | ID of the corresponding Morgen task. Null until W1 creates.   |
-| `tasks.<h>.morgenEtag`    | W1               | Morgen's If-Match etag, for 409 detection.                    |
-| `tasks.<h>.lastSyncedAt`  | W1 / W2 / W3     | Last successful sync timestamp.                               |
-| `tasks.<h>.lastSyncedHash`| W1 / W2 / W3     | Hash at the time of last sync.                                |
-| `tasks.<h>.lastSyncedBy`  | W1 / W2 / W3     | Which workflow wrote this sync record.                        |
-| `byNotionId`              | W1               | Reverse index: Notion page ID → task hash.                    |
-| `byMorgenId`              | W1               | Reverse index: Morgen task ID → task hash.                    |
+| Field | Who writes it | Purpose |
+|---|---|---|
+| `version` | seed / migration | Schema version. Bump on breaking change. v3 is post-Notion-drop. |
+| `tasks.<h>.hash` | W1 | Stable identity hash (see below). |
+| `tasks.<h>.sourceFile` | W1 / W2 | Path of the area file that owns this task. |
+| `tasks.<h>.text` | W1 / W2 | Plain task text, emoji + tokens stripped. |
+| `tasks.<h>.completed` | W1 / W2 | Checkbox state. |
+| `tasks.<h>.priority` / `priorityInt` | W1 | Task plugin emoji ladder, both string and int. |
+| `tasks.<h>.due` / `scheduled` / `start` | W1 | `YYYY-MM-DD` or null. |
+| `tasks.<h>.recurrence` | W1 | Raw recurrence string (e.g. `every week`). |
+| `tasks.<h>.tags` | W1 | `#tag` array. |
+| `tasks.<h>.morgenTaskId` | W1 | Morgen task ID. Null until W1 has created the task. |
+| `tasks.<h>.morgenId` | W2 | Morgen calendar-event ID for time-blocked tasks (`cev_*`). Null if the task isn't on the calendar. |
+| `tasks.<h>.morgenEtag` | W1 | Morgen `If-Match` etag, for 409 detection. |
+| `tasks.<h>.obsidianId` | W1 | The 🆔 minted into the markdown line (`m-XXXXXXXX`). |
+| `tasks.<h>.lastSyncedAt` / `lastSyncedHash` / `lastSyncedBy` | W1 / W2 | Last successful sync record. |
+| `byMorgenId` / `byObsidianId` | W1 / W2 | Reverse indexes for O(1) lookup. |
+| `notionPageId` | (legacy) | Always `null` post-cutover. Preserved as a field so v2-shape state files still parse. Migration drops the reverse index. |
 
 ### Lifecycle
 
-1. **Create:** user adds `- [ ] New task 📅 2026-05-01` to `TASKS-URGENT.md`. Daemon
-   parses, computes hash, adds entry with `notionPageId: null, morgenTaskId: null`,
-   and pushes to git.
-2. **W1 runs:** sees a new hash not in n8n's last-known state, creates a Notion page
-   and a Morgen task, writes the IDs back into `.sync-state.json`, commits with
-   `[bot:W1]` prefix.
-3. **Edit:** user changes the due date. Daemon parses and computes a new hash. It
-   preserves old Notion/Morgen IDs by mapping via the `byNotionId`/`byMorgenId`
-   indexes, writes a new entry, deletes the old one, and pushes.
-4. **W1 runs:** sees the new hash, but looks up Notion/Morgen IDs and issues an
-   `update`, not a `create`.
-5. **Complete in Morgen:** W2 polls, sees `closed`, writes `- [x]` to markdown via the
-   GitHub API with the `[bot:W2]` prefix. Daemon receives the push, re-parses, updates
-   state.
+1. **Create.** You add `- [ ] New task 📅 2026-06-01` to `TASKS-URGENT.md`. Daemon commits + pushes.
+2. **W1 next tick.** Sees a task line with no 🆔, no entry in `byObsidianId`. Creates a Morgen task, mints `m-XXXXXXXX`, writes the line back to markdown with the new 🆔 + the new state entry, all in one `[bot:W1]` commit.
+3. **Edit due date.** Daemon commits. Next W1 tick sees the same 🆔 with a different hash → `update` op against Morgen → updates `lastSyncedHash` in state.
+4. **Tick complete in Morgen.** Next W2 tick sees `closed`, writes `- [x]` to the markdown line, commits with `[bot:W2]`.
+5. **Sync-state corruption.** Delete `06-Tasks/.sync-state.json`, re-run `scripts/morgen-backfill.js`. The state rebuilds from markdown 🆔s + Morgen IDs. The markdown is canonical, so nothing is lost.
+
+### "Append-only" — clarification
+
+The state file is **not** literally append-only on disk; W1 and W2 rewrite it whole every commit. But the `tasks.<hash>.<field>` shape is **logically** append-only in two important ways:
+
+- **Hash-keyed dedup.** Every entry is keyed by content hash, so re-runs are idempotent. Two W1 runs that see the same task produce the same key, not duplicates.
+- **No deletes from active state.** Removed tasks (deleted from markdown) are dropped from `tasks` but their cross-app IDs land in a `tombstones` array W1 reads on the next run, so a re-appearance creates a brand-new Morgen task instead of half-resurrecting the old one.
+
+That's the discipline the schema enforces — not file format, but the semantics of writes.
+
+---
+
+## The bot-prefix echo guard
+
+Every git commit produced by automation has a known prefix. W1's first parsing step inspects each commit message in the incoming push diff. If **every** commit in the diff carries one of the prefixes below, W1 still re-reads `.sync-state.json` (in case W2 wrote new IDs) but **skips the Morgen write phase** entirely. This is the only thing standing between you and an infinite ping-pong loop.
+
+| Prefix | Source |
+|---|---|
+| `[bot:W1]` | W1 itself (state-file writeback) |
+| `[bot:W2]` | W2 (markdown writebacks) |
+| `[bot:daemon]` | local daemon's `git commit` |
+| `[bot:save]` | `/save` skill (vault-side) |
+| `[bot:save --backfill]` | `/save --backfill` historical ingest |
+| `[bot:wiki-add]` | `/wiki add` (concept ingest) |
+| `[bot:wiki-heal]` | `/wiki heal` (link repair) |
+| `[bot:wiki-fix]` | `/wiki` targeted repairs |
+| `[bot:morning]` / `[bot:nightly]` / `[bot:weekly]` / `[bot:health]` | scheduled audit agents |
+| `[bot:reconcile]` | post-import reconciliation |
+| `[bot:import-claude]` / `[bot:import-notes]` | one-shot importers |
+| `[bot:mogging-*]` | mogging-repo maintenance commits |
+| `[bot:backfill]` | `scripts/morgen-backfill.js` |
+
+If you write your own automation against the vault, **always** give it a `[bot:*]` prefix. Otherwise W1 will treat its commits as user edits and replay them through Morgen, often creating duplicates or undoing work.
+
+A push that mixes bot-prefixed commits with non-prefixed commits is treated as **non-bot** — W1 runs the full Morgen sync. That's intentional: if a human edit slipped in alongside automation, we want it propagated.
+
+---
+
+## Hashing and task identity
+
+Two identifiers do different jobs:
+
+- **`🆔 m-XXXXXXXX`** — the **stable join key**. Lives on the markdown line. Once minted, it never changes, even if you rename the task or move it across files. This is the field the 2-way sync uses to keep the same task glued together across edits.
+- **`hash`** — the **edit detector**. Recomputed every W1 run from `(sourceFile, text, priority, due, scheduled)`. If the hash changes, the task was edited. Completion state is tracked separately so closing a task doesn't look like a text edit.
+
+Hash format: SHA-256 of the canonical fields, `::`-joined, truncated to 24 hex chars. 96 bits of collision resistance is fine for any single-user task backlog and short enough to eyeball in logs.
+
+Why include `sourceFile` in the hash? So that the same text in `TASKS-URGENT.md` and `TASKS-LORECRAFT.md` counts as two distinct tasks. Why exclude line number? So you can re-order tasks within a file without churning state.
 
 ---
 
 ## Conflict resolution
 
-Three-way sync has a conflict story. task-maxxing resolves conflicts with the
-**Obsidian-wins** rule, modulated by `lastSyncedAt` timestamps.
+Two-way sync still has a conflict story — just a smaller one than three-way.
 
-### The rules
+1. If the markdown hash differs from `lastSyncedHash`, assume **the user edited markdown**. W1 propagates markdown to Morgen, overwriting any Morgen-side change in the same window.
+2. If W2 polls and finds a Morgen change AND the markdown hasn't changed since the last sync → propagate Morgen → markdown.
+3. If W2 polls and finds a Morgen change AND the markdown ALSO changed → markdown wins. W2 logs `conflict: markdown and morgen both changed for hash <h>; discarding remote change`.
+4. On a tie (timestamps equal to the second), **Obsidian wins**. Deterministic.
 
-1. If the markdown hash differs from `.sync-state.json.lastSyncedHash`, assume **the
-   user edited markdown**. W1 will propagate markdown to Notion and Morgen, overwriting
-   any Notion/Morgen changes that happened in the same window.
-2. If W2/W3 polls and finds a change in Notion/Morgen *and* the markdown hasn't changed
-   since the last sync, propagate the remote change into markdown.
-3. If W2/W3 polls and finds a change in Notion/Morgen *and* the markdown has also
-   changed, the markdown wins. Log a warning: `conflict: markdown and {notion|morgen}
-   both changed for hash <h>; discarding remote change`.
-4. On a tie (two timestamps equal to the second), **Obsidian wins**. This almost never
-   happens but the rule is deterministic.
-
-### What about simultaneous Notion and Morgen edits?
-
-W1 always runs against the current markdown state and produces a single snapshot. Both
-Notion and Morgen receive the same update in the same W1 run. If Notion and Morgen both
-also edited independently in the same window, both get overwritten.
-
-### What does NOT trigger an overwrite
-
-- A Notion page edited in a field task-maxxing doesn't track (e.g., a custom column you
-  added). Those are left alone — W1 only touches the fields it knows about.
-- A Morgen task's position on the calendar. The calendar link isn't an API-managed
-  field yet, so dragging a task on the Morgen calendar never round-trips into
-  markdown. (See [Morgen API quirks](#morgen-api-quirks).)
+What does NOT trigger an overwrite: a Morgen task's calendar position. Drag a task on the Morgen calendar and the time block stays put — the public Morgen API doesn't expose task-to-calendar promotion (only `cev_` calendar events round-trip via W2 direction 5/6).
 
 ---
 
-## Safety rails
+## Tradeoffs
 
-Three-way sync without safety rails is a foot-gun. task-maxxing has four.
+What this architecture is bad at:
 
-### 1. Rate budget
+- **Latency floor = 20 minutes.** The orchestrator fires every 20 min. There is no real-time path. If you tick a task off in Morgen at 12:01, expect markdown to catch up between 12:20 and 12:21.
+- **Single tenant.** Built for one user, one vault, one Morgen account. The `.sync-state.json` schema and the rate-budget assumptions both fall apart at multi-user scale.
+- **n8n cloud dependency.** If your n8n instance is down, the sync is down. There is no Morgen-side queue. Self-hosting n8n on your own VPS removes the vendor risk but adds operational cost.
+- **Morgen rate limit ceiling.** 300 points / 15 min. A backfill that touches 300+ tasks will blow the budget; pre-stage with `scripts/morgen-backfill.js`, which paces itself.
+- **Inbox-only.** Morgen's API doesn't yet let us create or reorder task lists, so everything lands in `inbox`.
+- **macOS-only daemon.** `launchd` plist + Full Disk Access. Linux users need to port the daemon to systemd; Windows users to a Service. Two-line port, but a port.
+- **Calendar promotion is one-way (Morgen UI only).** No API to drag a task onto the calendar from the markdown side. Use Morgen's auto-scheduler, or drag manually.
+- **No diffable git history of Morgen state.** Only the markdown side is in git. If something goes wrong inside Morgen, your only history is Morgen's own audit log.
 
-Each W1 run is capped at **100 Notion ops** and **100 Morgen ops**. If the diff has
-more, W1 processes the first 100, logs `budget exceeded; remaining N ops deferred to
-next run`, and exits green. The next push triggers W1 again and the remaining ops get
-processed.
-
-This keeps us under:
-
-- Notion's 3 req/s rate limit (100 ops at 3 req/s ≈ 34s, well inside the 60s workflow
-  timeout).
-- Morgen's 300 points / 15 min rate limit (100 ops × 1 point ≈ one-third of the cap —
-  comfortable headroom since Morgen raised the ceiling from 100 to 300 on 2026-04-15).
-
-### 2. Flip ratio guard
-
-Before W1 applies any destructive operation (archive or delete), it computes the
-**flip ratio**:
-
-```
-flipRatio = (creates + archives + updates) / totalTasks
-```
-
-If `flipRatio > 0.25`, W1 stops, writes a warning, and refuses to proceed. This
-catches the "I accidentally deleted my entire TASKS-URGENT.md file" class of bug.
-Rather than archiving every task in Notion, W1 pauses and asks you to investigate.
-
-Override: set `FORCE_SYNC=true` in the workflow env vars for one run.
-
-### 3. Echo-loop guard
-
-Every git commit from a bot (W1, W2, W3, the backfill script, or the local daemon)
-has a commit message prefix drawn from `BOT_COMMIT_PREFIXES` in
-`src/sync-helpers.js`:
-
-- Daemon: `[bot:daemon]`
-- W1: `[bot:W1]`
-- W2: `[bot:W2]`
-- W3: `[bot:W3]`
-- Morgen backfill: `[bot:backfill]`
-
-The W1 webhook handler checks `commits[].message` on the incoming push. If **every**
-commit in the push is prefixed with one of the labels above, W1 skips the
-Notion/Morgen write phase. It still reads `.sync-state.json` (in case it's been
-updated) but won't fire writes.
-This prevents the loop:
-
-```
-W2 writes markdown → push → W1 fires → W1 writes Notion → Notion row changes →
-W3 reads it next cycle → W3 writes markdown → push → W1 fires → ...
-```
-
-Without the guard, a single completion event could fire an infinite ping-pong.
-
-### 4. 409 retry on Morgen
-
-Morgen's PATCH endpoints support `If-Match` with an etag. If W1's update comes back
-`409 Conflict`, it:
-
-1. Fetches the current Morgen task (one extra GET).
-2. Re-computes the diff against the new etag.
-3. Retries once with the new etag.
-4. If the second attempt also fails, logs and defers to the next run.
-
-This handles the case where you edited the task in Morgen between W1 reading state and
-W1 writing.
+These are deliberate. The kit is opinionated toward "your data stays in markdown, the calendar is the disposable mirror." If you need real-time, multi-user, or Morgen-canonical, this isn't the kit.
 
 ---
 
-## Morgen API quirks
+## What changed in May 2026 (Notion drop)
 
-Morgen's API is functional but has sharp edges worth knowing about.
+This kit was originally a **3-way Obsidian ↔ Notion ↔ Morgen** sync. On 2026-05-04, Notion was dropped:
 
-### Rate limit: 300 points / 15 min (raised from 100 on 2026-04-15)
+- **Why.** The Notion side had been silently 401-failing for an unknown duration (token rotation issue, surfaced when nothing actually worked end-to-end). The maintainer also stopped using the Notion task DB as a daily driver, so the rebuild wasn't worth the engineering. The 2-way Obsidian ↔ Morgen path was the actually-used path.
+- **What was removed.**
+  - W3 (Notion → Obsidian) workflow — converted to a no-op stub returning `{ok:true, skipped:'notion-dropped-2026-05-04'}`. Not in the orchestrator graph anymore.
+  - All `POST /v1/databases/*` and `PATCH /v1/pages/*` calls inside W1.
+  - `notionPageId` reverse index in `.sync-state.json`. The field is preserved on each task entry as `null` so v2-shape state files still parse, but nothing reads or writes it.
+  - The Notion DB schema and "Area select must be pre-populated" requirement.
+- **What stayed identical.**
+  - Markdown grammar.
+  - W1 / W2 contract (Morgen side only).
+  - The bot-prefix echo guard.
+  - The local daemon.
+  - The hash strategy and `.sync-state.json` lifecycle.
 
-Morgen uses a point-based rate limit. Observed costs (verified via live probe
-2026-04-18): `/v3/tasks/create` = 1 pt, `/v3/tasks/list` = 10 pts, `/v3/tags` = 10 pts.
-Responses expose `ratelimit-limit`, `ratelimit-remaining`, and `ratelimit-reset`
-headers (lowercase, IETF draft-style) you can poll to stay honest. task-maxxing
-throttles W1 to ~100 ops per 15-min window — leaving ~200pt headroom against the
-300pt ceiling for parallel callers and Morgen's own background tasks.
+### If you're upgrading from the 3-way version
 
-### Task-to-calendar API is unavailable
+If you were running the kit before 2026-05-04, the migration is three steps:
 
-The Morgen UI lets you drag a task onto the calendar, which "schedules" it with a
-specific duration and time. As of writing, **there is no API to do this**. The
-`scheduledDate` field on a task sets a *day*, not a time block.
+1. **Stop W0** (and W3, if you ever activated it directly). Disable the schedule trigger in n8n so nothing fires while you migrate.
+2. **Reimport workflows.** Re-run `scripts/install-workflows.sh` from a fresh clone of the repo. The installer ships the post-cutover W1 and W2 (no Notion calls), the W0 sequencer, and the watchdog.
+3. **Restart W0.** Activate `W0-Sync-Orchestrator`. Leave W1, W2, and the watchdog inactive in the UI — they're called by W0, the watchdog runs on its own internal schedule.
 
-**Implication:** task-maxxing writes your scheduled date to Morgen's `scheduledDate`,
-but the actual time block is always placed by Morgen's own auto-scheduler (if you have
-it on) or manually by you.
-
-### Task tags are UUIDs
-
-Morgen's `tags` field on a task is an array of tag **IDs**, not tag names. To tag a
-task, you need to either:
-
-1. Look up the tag by name via `GET /v3/tags`, or
-2. Create the tag first, grab the ID, then attach it to the task.
-
-task-maxxing maintains an in-memory `_tagCache` keyed by name → ID in each workflow run
-so we don't burn rate limit looking up the same tags over and over. The cache is
-flushed at the start of each W1 run.
-
-### `taskListId=inbox` only
-
-Morgen has the concept of task lists (like "Inbox", "Personal", "Work") but their API
-doesn't yet let us create or reorder lists. Everything task-maxxing writes lands in
-`inbox`. If you use multiple lists in Morgen by hand, great — but don't expect
-task-maxxing to populate them.
-
-### `integrationId` filter
-
-When W2 polls Morgen tasks, it filters by `integrationId` to exclude tasks that came
-from Morgen's other integrations (your calendar-scraped todos, for example). Only
-tasks W1 created (which carry our `integrationId`) round-trip back. This is how we
-avoid "why is every gmail task showing up in my vault" behavior.
-
----
-
-## Notion database schema
-
-task-maxxing expects a Notion database with the following properties. The installer
-doesn't create this for you — you create it in the Notion UI once, then paste the
-database ID into `.env`.
-
-| Property      | Type          | Required? | Notes                                                               |
-|---------------|---------------|-----------|---------------------------------------------------------------------|
-| **Name**      | Title         | yes       | The task text.                                                      |
-| **Status**    | Select        | yes       | Options: `To Do`, `Doing`, `Done`. Default `To Do`.                 |
-| **Priority**  | Select        | yes       | Options: `Highest`, `High`, `Medium`, `Low`, `Lowest`, `None`.      |
-| **Area**      | Select        | yes       | Options match your `TASKS-*.md` files (e.g. `URGENT`, `LORECRAFT`). |
-| **Due**       | Date          | no        | Maps to the due date in markdown.                                   |
-| **Scheduled** | Date          | no        | Maps to the scheduled date in markdown.                             |
-| **Source**    | Rich text     | yes       | Full path of the source markdown file. Populated by W1.             |
-| **Hash**      | Rich text     | yes       | Task hash. Populated by W1.                                         |
-| **Tags**      | Multi-select  | no        | Passed through from markdown `#tags`.                               |
-| **Synced At** | Date          | yes       | Last W1 sync timestamp. Populated by W1.                            |
-
-**Area values** are derived from the filename: `TASKS-URGENT.md` becomes `URGENT`,
-`TASKS-LORECRAFT.md` becomes `LORECRAFT`, and so on. You'll need to add each value to
-the `Area` select options before W1 runs — W1 errors out rather than silently creating
-new options. (Notion creates options on the fly, but they'll have random colors and
-cleanup is manual.)
-
-See `notion/tasks-db-schema.md` for a copy-pasteable spec you can hand to Notion's
-database UI.
-
----
-
-## Alternatives considered
-
-> "Why didn't you just use X?"
-
-### Zapier / Make
-
-Died the moment we needed three-way sync with a conflict resolution rule. Zapier's
-"multi-step zaps" can chain but they don't have shared state between runs, so there's
-no way to remember that task `abc` already has Notion ID `xyz`. You'd end up creating
-duplicates on every run.
-
-### Notion API + custom Obsidian plugin
-
-Plausible, but:
-
-1. Obsidian plugins run in the Obsidian process, which isn't always running.
-2. They can't easily write to Morgen because the Morgen SDK isn't available in the
-   Electron renderer context.
-3. Plugin distribution and updates are a headache compared to a git repo.
-
-### A bespoke webhook gateway (self-hosted Node server)
-
-This is what task-maxxing almost became. The reason we went with n8n is:
-
-- **Debuggability.** n8n shows you the input/output of every node for every run.
-  Debugging a bespoke Node server means reading your own logs.
-- **Retries and scheduling.** n8n gives you cron + retry + error workflows for free.
-- **Credential management.** n8n stores OAuth tokens and API keys once; you don't
-  bake them into env vars on a VPS.
-- **UI.** When something breaks, you can click "execute workflow" and see the failure
-  in real time.
-
-The downside is you depend on n8n. But n8n is open source and self-hostable, so
-vendor risk is capped.
-
-### Todoist MCP / Motion MCP
-
-Both are one-app-at-a-time. Motion doesn't round-trip to Obsidian without custom code.
-Todoist hit Nate's free-tier project cap within a week and was uninstalled.
-
-### Syncthing / Obsidian Sync
-
-Those sync the *vault* between your own devices, but they don't turn a `.md` task into
-a Notion row or a Morgen task. Orthogonal problem.
-
-### Just use Obsidian and nothing else
-
-This is the right answer for a lot of people. task-maxxing is for people who
-specifically need (a) a shareable UI for collaborators or a client, and (b) an
-auto-scheduling calendar, *and* want their data to stay in markdown.
+Your `.sync-state.json` does NOT need to be regenerated. The new W1 reads v2 state files fine; `notionPageId` is just ignored from now on. If you'd rather drop the dead field, run `scripts/validate-sync-state.js --strip-legacy` and commit the result with `[bot:wiki-fix] drop legacy notionPageId`.
 
 ---
 
 ## Next
 
 - Walk through [SETUP.md](SETUP.md) to get a working install.
-- If you hit something weird, [TROUBLESHOOTING.md](TROUBLESHOOTING.md) covers the
-  failure modes seen in real runs.
+- If you hit something weird, [TROUBLESHOOTING.md](TROUBLESHOOTING.md) covers the failure modes seen in real runs.
 - To modify the workflows or add fields, see [CONTRIBUTING.md](CONTRIBUTING.md).
