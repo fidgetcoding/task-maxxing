@@ -18,9 +18,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 - README: social-links badge strip (X · LinkedIn · YouTube · Instagram, ruvnet-style for-the-badge) inserted into the centered header block beneath the project license badge.
+- **Sync-Health-Watchdog (optional 4th workflow).** Hourly check that the orchestrator is actually committing — opens a GitHub issue (and optional Telegram ping) if no `[bot:W1]` commit lands within `STALE_MINUTES` (default 60). Documented in `docs/ARCHITECTURE.md` and `docs/SETUP.md` Step 9. Not imported by `scripts/install-workflows.sh` because alert destinations vary per user. The kit author's own instance has it as workflow ID `mzpCCbqD1MvxJhAm`.
+- Four canonical docs rewritten end-to-end for the 2-way state: `docs/SETUP.md` (`a5cce71`), `docs/ARCHITECTURE.md` (`43f4df3`), `docs/TROUBLESHOOTING.md` (`6b224a3`), `docs/DESIGN-RATIONALE.md` (`c44fef7`).
 
 ### Changed
+- **Orchestrator workflow renamed.** The orchestrator is now `W0-Sync-Orchestrator` everywhere in the kit. Pre-cutover installs (and pre-tonight installs) had it named `W2-3-1-Sync-Orchestrator` after the original W2 → W3 → W1 sequence. The kit author's own n8n instance was renamed tonight (workflow ID unchanged: `WJig0XZ7NV1pCa8e`). Existing-user migration notes in `README.md` and `docs/SETUP.md` already reference the old name so upgraders can find their old workflow to delete.
 - Git history rewrite: `git filter-repo` collapsed all author/committer identities (dependabot[bot], Agent 13, lorecraft-io, fidgetcoding variants) into a single `Nate Davidovich <nate@lorecraft.io>` identity across `main`. All `Co-authored-by:` trailers stripped. This repo has no release tags and no published npm artifact, so no downstream impact.
+- `package.json` description: `Perfect task sync between Obsidian, Notion, and Morgen` → `Two-way task sync between Obsidian and Morgen`.
+- `daemon/README.md`, `src/auto-commit.js` echo-loop comment, `examples/sample-.env.example` GitHub-PAT scope notes, `workflows/README.md`, and `docs/CONTRIBUTING.md`: all stripped of live-state Notion references. Migration / historical notes are preserved verbatim where they help upgraders.
+- `.github/workflows/validate.yml` `install-workflows DRY_RUN smoke` step: dropped unused `NOTION_TOKEN` and `NOTION_DATABASE_ID` env vars (the installer has not consumed them since the cutover).
 
 ## [0.1.0] - 2026-04-20 (untagged)
 
