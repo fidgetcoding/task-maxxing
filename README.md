@@ -62,8 +62,6 @@ Honestly? Probably not. For most people, pick one app and live there.
 
 But if you're reading this you probably have ADHD and are trying to stay organized while juggling 43 side projects in 10+ Claude Code instances at the same time — and you refuse to update the same task in two different places like some kind of manual-labor peasant. Same. That's who this is for.
 
-The only paid piece is an **n8n subscription** (which I was paying for anyway for other automation). Everything else — Obsidian, Morgen's free tier, GitHub, Node — is free or already on your machine.
-
 ---
 
 ## Why not just...
