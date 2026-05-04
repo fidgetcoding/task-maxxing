@@ -3,7 +3,7 @@
   "nodes": [
     {
       "id": "b7c9a0f1-1a23-4b56-9f8e-1a2b3c4d5e6f",
-      "name": "Every 15 Minutes",
+      "name": "Every 20 Minutes",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
@@ -15,7 +15,7 @@
           "interval": [
             {
               "field": "minutes",
-              "minutesInterval": 15
+              "minutesInterval": 20
             }
           ]
         }
@@ -23,7 +23,7 @@
     },
     {
       "id": "c0d1e2f3-4a56-4b78-9c0d-1e2f3a4b5c6d",
-      "name": "Run W2 (Morgen → Obsidian)",
+      "name": "Run W2 (Morgen \u2192 Obsidian)",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [
@@ -44,30 +44,8 @@
       }
     },
     {
-      "id": "d1e2f3a4-5b67-4c89-9d0e-1f2a3b4c5d6e",
-      "name": "Run W3 (Notion → Obsidian)",
-      "type": "n8n-nodes-base.executeWorkflow",
-      "typeVersion": 1.2,
-      "position": [
-        580,
-        300
-      ],
-      "parameters": {
-        "source": "database",
-        "workflowId": {
-          "__rl": true,
-          "mode": "id",
-          "value": "{{W3_WORKFLOW_ID}}"
-        },
-        "mode": "each",
-        "options": {
-          "waitForSubWorkflow": true
-        }
-      }
-    },
-    {
       "id": "e2f3a4b5-6c78-4d90-9e0f-1a2b3c4d5e6f",
-      "name": "Run W1 (Obsidian → Notion + Morgen)",
+      "name": "Run W1 (Obsidian \u2192 Morgen)",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [
@@ -89,33 +67,22 @@
     }
   ],
   "connections": {
-    "Every 15 Minutes": {
+    "Run W2 (Morgen \u2192 Obsidian)": {
       "main": [
         [
           {
-            "node": "Run W2 (Morgen → Obsidian)",
+            "node": "Run W1 (Obsidian \u2192 Morgen)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Run W2 (Morgen → Obsidian)": {
+    "Every 20 Minutes": {
       "main": [
         [
           {
-            "node": "Run W3 (Notion → Obsidian)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Run W3 (Notion → Obsidian)": {
-      "main": [
-        [
-          {
-            "node": "Run W1 (Obsidian → Notion + Morgen)",
+            "node": "Run W2 (Morgen \u2192 Obsidian)",
             "type": "main",
             "index": 0
           }

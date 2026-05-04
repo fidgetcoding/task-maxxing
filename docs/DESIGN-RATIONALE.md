@@ -1,5 +1,12 @@
 # Design Rationale
 
+> [!IMPORTANT]
+> **2026-05-04 cutover:** This doc still describes the original three-way
+> design (Obsidian + Notion + Morgen). The kit is now **two-way Obsidian
+> ↔ Morgen**. The rationales for the Notion side are kept as historical
+> context but no longer drive the implementation. See
+> [CHANGELOG.md](../CHANGELOG.md). A full rewrite is queued.
+
 > Why task-maxxing is shaped the way it is. This document is for the person
 > who's about to fork the repo and is thinking "wait, why did they do it
 > _that_ way?" It's also for the person (possibly us, six months from now)

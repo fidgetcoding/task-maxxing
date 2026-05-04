@@ -1,5 +1,11 @@
 # Troubleshooting
 
+> [!IMPORTANT]
+> **2026-05-04 cutover:** Notion-side troubleshooting entries (W3 errors,
+> Notion 401s, schema-mismatch issues) below are obsolete — Notion is no
+> longer in the kit. Skip those entries. The Morgen + Obsidian + W0 / W1 /
+> W2 entries are still current. See [CHANGELOG.md](../CHANGELOG.md).
+
 Things that have actually broken during real runs, in rough order of how often they
 happen. Every entry has a **symptom**, a **diagnostic** command, and a **fix**.
 

@@ -1,5 +1,12 @@
 # Setup
 
+> [!IMPORTANT]
+> **2026-05-04 cutover:** Notion was dropped from the kit. Skip any Notion
+> integration / DB-schema / workspace-sharing steps in this doc — they're
+> retained as historical context but the maintained pipeline is now
+> Obsidian ↔ Morgen only. Budget is closer to **1 hour** without the
+> Notion side. See [CHANGELOG.md](../CHANGELOG.md). A full rewrite is queued.
+
 This is the zero-to-working walkthrough for task-maxxing. Budget **1–2 hours** end to
 end. There are 15 steps; none of them are hard, but most of them require a click in a
 third-party UI, so grab a coffee and take it in order.

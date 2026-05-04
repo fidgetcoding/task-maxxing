@@ -1,5 +1,13 @@
 # Architecture
 
+> [!IMPORTANT]
+> **2026-05-04 cutover:** This doc was written for the original three-way
+> Obsidian ↔ Notion ↔ Morgen pipeline. The kit is now **two-way Obsidian ↔
+> Morgen** — W3 (Notion → Obsidian) is removed and W1 no longer makes
+> Notion API calls. Sections describing Notion routing or the W3 worker
+> are historical context. Orchestrator graph is now `Every 20m → W2 → W1`.
+> See [CHANGELOG.md](../CHANGELOG.md). A full rewrite is queued.
+
 This document explains how task-maxxing actually works. If you just want to get it
 running, jump to [SETUP.md](SETUP.md). If you want to understand the invariants so you
 can debug it (or fork it), you're in the right place.

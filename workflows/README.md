@@ -1,6 +1,11 @@
 # Workflows
 
-n8n workflow JSON exports for the three sync paths. Import these into your
+> [!NOTE]
+> **2026-05-04 cutover:** This is now a two-workflow setup (W2 + W1)
+> orchestrated by W0. The W3 (Notion → Obsidian) workflow has been removed
+> from the kit. See [`../CHANGELOG.md`](../CHANGELOG.md).
+
+n8n workflow JSON exports for the two sync paths. Import these into your
 n8n instance via `../scripts/install-workflows.sh` (preferred) or manually.
 
 ## Files
