@@ -128,7 +128,10 @@ for pair in "${WORKFLOWS[@]}"; do
   : > "${rendered}"
 
   sed \
-    -e "s|{{GITHUB_TOKEN}}|${GH_E}|g" \    -e "s|{{MORGEN_KEY}}|${MORGEN_E}|g" \    -e "s|{{GITHUB_REPO}}|${GH_REPO_E}|g" \
+    -e "s|{{GITHUB_TOKEN}}|${GH_E}|g" \
+    -e "s|{{MORGEN_KEY}}|${MORGEN_E}|g" \
+    -e "s|{{MORGEN_API_KEY}}|${MORGEN_E}|g" \
+    -e "s|{{GITHUB_REPO}}|${GH_REPO_E}|g" \
     -e "s|{{GITHUB_OWNER}}|${GH_OWNER_E}|g" \
     -e "s|{{GITHUB_REPO_NAME}}|${GH_REPO_NAME_E}|g" \
     "${src}" > "${rendered}"
@@ -199,7 +202,8 @@ else
   : > "${orch_rendered}"
   sed \
     -e "s|{{W1_WORKFLOW_ID}}|${W1_ID_E}|g" \
-    -e "s|{{W2_WORKFLOW_ID}}|${W2_ID_E}|g" \    "${ORCH_SRC}" > "${orch_rendered}"
+    -e "s|{{W2_WORKFLOW_ID}}|${W2_ID_E}|g" \
+    "${ORCH_SRC}" > "${orch_rendered}"
 
   if grep -q '{{[A-Z_]*}}' "${orch_rendered}"; then
     echo "[install-workflows] ERROR: unreplaced placeholders in orchestrator:" >&2
