@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 /**
- * sync-e2e-tests.js — Offline E2E test harness for the Obsidian ↔ Notion ↔ Morgen
- * bidirectional task-sync pipeline.
+ * sync-e2e-tests.js — Offline E2E test harness for the Obsidian ↔ Morgen
+ * task-sync pipeline (with legacy Notion-mock paths retained for regression).
  *
  * All parsing / hashing / state / path / area logic comes from the LOCKED
- * canonical library at `../sync-helpers.js`. This file only adds:
- *   - in-memory Notion + Morgen mocks
+ * canonical library at `../src/sync-helpers.js`. This file only adds:
+ *   - in-memory Notion + Morgen mocks (Notion mock = legacy regression coverage)
  *   - W1/W2/W3 simulators that exercise the bidirectional paths
  *   - 12 scenario tests (A–L)
+ *
+ * Note 2026-05-04: Notion was dropped from the live sync stack and W3 was
+ * archived. The Notion-side test cases (testC_NotionCreationW3,
+ * testD_ConflictNotionWins, testE_ConflictTieGoesToObsidian, simulateW3) are
+ * RETAINED in this harness — they exercise pure in-memory mocks and never
+ * hit a real Notion API. They act as regression coverage for the
+ * area-key↔Notion-label mapping (still consumed by W1's tag attachment path
+ * because Morgen tag labels reuse the `01 URGENT` shape inherited from the
+ * Notion era). Removing them is non-trivial: it requires pruning the helper
+ * exports in `src/sync-helpers.js` that the live W1 path still needs. Defer.
  *
  * Exit code = number of failing tests.
  * Run: `node scripts/sync-e2e-tests.js`

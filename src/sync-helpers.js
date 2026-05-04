@@ -1,23 +1,35 @@
 /**
- * sync-helpers.js — CANONICAL shared library for Obsidian ↔ Notion ↔ Morgen sync
+ * sync-helpers.js — CANONICAL shared library for Obsidian ↔ Morgen sync
+ * (post-2026-05-04: Notion was dropped from the live sync stack)
  *
  * Locked 2026-04-14 after the 15-agent swarm cleanup. This is the ONE source
- * of truth. W1/W2/W3 Code nodes inline this verbatim. Scripts require() it.
+ * of truth for the parsing/hashing/state contract. W1 + W2 Code nodes inline
+ * this verbatim. Scripts require() it.
+ *
+ * Note 2026-05-04: This file retains Notion-flavored helpers
+ * (areaKeyToNotionLabel, notionLabelToAreaKey, NOTION_AREAS, NOTION_AREA_TO_KEY,
+ * morgenPriorityToNotion, notionPriorityToInt, findByNotionId). These are KEPT
+ * as a forward-compat surface — Morgen's tag labels still use the original
+ * `01 URGENT` / `02 GENERAL` shape inherited from the Notion era, so the
+ * area-key↔label mapping is still consumed by W1's tag attachment path.
+ * Renaming would be a behavior-changing diff. Treat the Notion exports as
+ * "still useful, no longer load-bearing for cross-system writes."
  *
  * LOCKED DECISIONS (do not relitigate):
  *   - Hash: SHA256(sourceFile::text::priority_int::due::scheduled).slice(0,24)
  *   - Priority: integer (1/2/5/7/9), null → '0'
  *   - Dates: bare YYYY-MM-DD (slice(0,10)) before hashing
- *   - Area names: LITERAL Notion select values with number prefix + U+00B7 dot
+ *   - Area names: LITERAL number-prefix + U+00B7 dot shape (Notion-era schema, retained for Morgen tag labels)
  *   - sync-state shape: { _version, _tagCache, entries: { <hash>: {...} } }
+ *     Each entry retains a legacy `notionPageId: null` field as forward-compat (NOT removed in cutover)
  *   - Parser: fenced-code-block aware (skips ```tasks query blocks)
  *
  * Consumed by:
- *   - n8n Workflow 1 (Obsidian-Git-Task-Sync) — inlined
- *   - n8n Workflow 2 (Morgen-Task-Completion-Sync) — inlined
- *   - n8n Workflow 3 (Notion-Done-To-Obsidian-Sync) — inlined
+ *   - n8n Workflow 1 (Obsidian-Git-Task-Sync, LQ1ZRhdO254qtsR6) — inlined
+ *   - n8n Workflow 2 (Morgen-Task-Completion-Sync, YHttai0DINN71YDl) — inlined
+ *   - n8n Workflow 3 (Notion-Done-To-Obsidian-Sync, bJDRkfYzzANvd7qd) — ARCHIVED 2026-05-04, no longer inlines
  *   - 06-Tasks/scripts/morgen-backfill.js — via require
- *   - 06-Tasks/scripts/sync-e2e-tests.js — via require
+ *   - 06-Tasks/scripts/sync-e2e-tests.js — via require (in-memory mocks; legacy Notion test paths retained for regression coverage of the area-key↔label mapping)
  */
 
 'use strict';
