@@ -84,37 +84,46 @@ The missing piece is **two-way sync with one canonical source**. `task-maxxing` 
 
 ## Architecture
 
-Four directed edges, two sub-workflows, one orchestrator, one local daemon.
+Bidirectional. Edit anywhere; it converges everywhere. Two sub-workflows, one orchestrator, one local daemon.
 
 ```
-                        ┌───────────────────────┐
-                        │  Obsidian (canonical) │
-                        │  06-Tasks/*.md        │
-                        │  + .sync-state.json   │
-                        └──────────┬────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              │ local daemon       │ W1 (n8n)           │
-              │ watches files,     │ called by W0       │
-              │ git commit,        │ → Morgen           │
-              │ git push           │                    │
-              │                    ▼                    │
-              ▼            ┌──────────────┐             │
-      ┌──────────────┐     │   Morgen     │◄────────────┤
-      │  GitHub      │     │  Tasks (inbox│   W2 (n8n,  │
-      │ (task mirror │     │  list only)  │   called by │
-      │  repo)       │     └──────────────┘   W0)       │
-      └──────────────┘                       closed →   │
-                                             Obsidian   │
-                                             (commit ───┘
-                                              back)
+                       ┌────────────────────────┐
+                       │  Obsidian (canonical)  │
+                       │  06-Tasks/*.md         │
+                       │  + .sync-state.json    │
+                       └────────────▲───────────┘
+                                    │
+                  ▲ local daemon    │   ▼ local daemon
+                  │ git pull on     │   │ fs watch →
+                  │ remote change   │   │ git commit + push
+                                    │
+                       ┌────────────▼───────────┐
+                       │  GitHub                │
+                       │  obsidian-tasks-sync   │
+                       └─▲────────────────────┬─┘
+                         │                    │
+                W2 commits│                    │ W1 reads
+                Morgen    │                    │ Obsidian
+                changes   │                    │ state and
+                back      │                    │ syncs to
+                          │                    │ Morgen
+                         │                    │
+                         │                    ▼
+                       ┌─┴────────────────────┐
+                       │  Morgen Tasks        │
+                       │  (calendar-side,     │
+                       │   you can edit here  │
+                       │   too)               │
+                       └──────────────────────┘
 
             ┌──────────────────────────────────────┐
-            │  W0 — Sync Orchestrator (every 15 m) │
+            │  W0 — Sync Orchestrator (every 20 m) │
             │  executeWorkflow W2 → W1, wait=true  │
             │  The ONLY workflow you activate.     │
             └──────────────────────────────────────┘
 ```
+
+**How the loop closes:** the local daemon makes the GitHub repo a two-way mirror of `06-Tasks/` on disk — it pushes your edits up AND pulls W2's commits back down. So once W2 lands a commit, the change reaches your Obsidian vault on the next daemon tick without you doing anything.
 
 ### Workflow glossary
 
@@ -308,8 +317,6 @@ MIT — see [LICENSE](LICENSE).
 ## Credits
 
 Built by **Nate Davidovich** ([lorecraft-io](https://github.com/lorecraft-io)) after a few too many hours wondering why nobody else had shipped a working two-way task sync between a markdown vault and an auto-scheduling calendar. This is the reference implementation that powers my personal 2ndBrain vault.
-
-If you ship a port (Linux daemon, Windows service, Todoist replacement, etc.), open a PR and I'll link it from here.
 
 [⤴ back to top](#top)
 
