@@ -156,7 +156,7 @@ Morgen API keys don't auto-expire, but they get revoked if you rotate them in th
 
 ```bash
 # In your vault, grep for the duplicated task text without the 🆔 token:
-cd "$VAULT_PATH/06-Tasks"
+cd "$VAULT_PATH/05-Tasks"
 grep -rn "the task text here" .
 
 # Then check whether the matching line in markdown carries 🆔 m-XXXXXXXX:
@@ -175,7 +175,7 @@ If the markdown line has no `🆔 m-XXXXXXXX`, that's the bug — W1 minted a fr
    ```
 4. Save. Daemon commits, W1 runs on the next 20-min tick. From now on, that task is stable.
 
-Alternative: open `06-Tasks/.sync-state.json`, find the entry by `text`, copy its `morgenTaskId`, paste back into the markdown line as the `🆔` value.
+Alternative: open `05-Tasks/.sync-state.json`, find the entry by `text`, copy its `morgenTaskId`, paste back into the markdown line as the `🆔` value.
 
 **Why it happens**
 
@@ -190,7 +190,7 @@ W1's only join key from markdown → Morgen is the `🆔 m-XXXXXXXX` token. If a
 **Diagnose**
 
 ```bash
-cd "$VAULT_PATH/06-Tasks"
+cd "$VAULT_PATH/05-Tasks"
 git log -1 --pretty=format:"%s%n%b" -- TASKS-*.md FIDGETCODING/**/TASKS-*.md
 ```
 
@@ -204,7 +204,7 @@ Also check the n8n W1 executions tab — if there's no execution within the last
 
 ```bash
 # Re-commit with a non-bot subject so W1 picks it up:
-cd "$VAULT_PATH/06-Tasks"
+cd "$VAULT_PATH/05-Tasks"
 git commit --allow-empty -m "manual edit on $(date -u +%FT%TZ)"
 git push origin main
 ```
@@ -254,7 +254,7 @@ This is the documented asymmetric-delete behavior, not a bug. W1 does **not** so
 
 ```bash
 # Confirm the markdown line is actually gone:
-cd "$VAULT_PATH/06-Tasks"
+cd "$VAULT_PATH/05-Tasks"
 git log -p -- TASKS-*.md | grep "🆔 m-XXXXXXXX"
 ```
 
@@ -277,7 +277,7 @@ Asymmetric delete is intentional. The original 3-way design treated Notion and M
 **Diagnose**
 
 ```bash
-cd "$VAULT_PATH/06-Tasks"
+cd "$VAULT_PATH/05-Tasks"
 git log -p -- TASKS-*.md | grep "🆔 m-" | sort | uniq -c | sort -rn | head
 ```
 
@@ -413,11 +413,11 @@ Notion was dropped from the live stack on 2026-05-04. The kit on `main` is two-w
 
 ## Still stuck?
 
-Open an issue at [github.com/lorecraft-io/task-maxxing/issues](https://github.com/lorecraft-io/task-maxxing/issues) with:
+Open an issue at [github.com/fidgetcoding/task-maxxing/issues](https://github.com/fidgetcoding/task-maxxing/issues) with:
 
 1. **Which entry above you tried** (or "not in the runbook").
 2. **The exact error message**, copy-pasted verbatim.
 3. **Last 20 lines of the relevant n8n execution log**, redacted of tokens.
-4. **A redacted snippet from `06-Tasks/.sync-state.json`** for the affected task.
+4. **A redacted snippet from `05-Tasks/.sync-state.json`** for the affected task.
 
 Most issues are fixable in one round-trip with all four.

@@ -14,7 +14,7 @@
 #
 # Required env vars:
 #   BUNDLE_ID        Reverse-DNS label (e.g. io.example.task-maxxing-daemon)
-#   WATCH_PATH       Absolute path to your vault's 06-Tasks dir (the git repo to commit)
+#   WATCH_PATH       Absolute path to your vault's 05-Tasks dir (the git repo to commit)
 #   SCRIPT_PATH      Absolute path to src/auto-commit.js in your clone of this repo
 #
 # Optional env vars:
@@ -26,14 +26,14 @@
 #
 # Usage:
 #   BUNDLE_ID=io.example.task-maxxing-daemon \
-#   WATCH_PATH="$HOME/path/to/vault/06-Tasks" \
+#   WATCH_PATH="$HOME/path/to/vault/05-Tasks" \
 #   SCRIPT_PATH="$HOME/code/task-maxxing/src/auto-commit.js" \
 #     bash daemon/install-daemon.sh
 
 set -euo pipefail
 
 : "${BUNDLE_ID:?BUNDLE_ID env var required (e.g. io.example.task-maxxing-daemon)}"
-: "${WATCH_PATH:?WATCH_PATH env var required (absolute path to your 06-Tasks dir)}"
+: "${WATCH_PATH:?WATCH_PATH env var required (absolute path to your 05-Tasks dir)}"
 : "${SCRIPT_PATH:?SCRIPT_PATH env var required (absolute path to src/auto-commit.js)}"
 
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"

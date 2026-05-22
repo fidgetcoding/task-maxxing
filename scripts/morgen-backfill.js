@@ -15,15 +15,15 @@
  *
  * Environment variables (required unless overridden by flags):
  *   MORGEN_API_KEY   Your Morgen API key (or pass --api-key)
- *   VAULT_PATH       Absolute path to your Obsidian 06-Tasks dir, i.e. the
+ *   VAULT_PATH       Absolute path to your Obsidian 05-Tasks dir, i.e. the
  *                    dir that contains TASKS-URGENT.md etc. (or pass --vault)
  *
  * Usage:
- *   VAULT_PATH="$HOME/path/to/vault/06-Tasks" \
+ *   VAULT_PATH="$HOME/path/to/vault/05-Tasks" \
  *   MORGEN_API_KEY="…" \
  *     node scripts/morgen-backfill.js --dry-run
  *
- *   node scripts/morgen-backfill.js --vault "$HOME/vault/06-Tasks" --dry-run
+ *   node scripts/morgen-backfill.js --vault "$HOME/vault/05-Tasks" --dry-run
  *   node scripts/morgen-backfill.js --verbose           # live, chatty
  *   node scripts/morgen-backfill.js --api-key <KEY>     # override env
  *   node scripts/morgen-backfill.js --max-points 85     # rate-limit budget cap
@@ -119,7 +119,7 @@ function printHelp() {
 morgen-backfill.js — seed Obsidian tasks into Morgen as native tasks
 
 REQUIRED (env or flag):
-  VAULT_PATH / --vault <dir>     Absolute path to your 06-Tasks directory
+  VAULT_PATH / --vault <dir>     Absolute path to your 05-Tasks directory
   MORGEN_API_KEY / --api-key <k> Morgen API key (required for LIVE runs)
 
 FLAGS:

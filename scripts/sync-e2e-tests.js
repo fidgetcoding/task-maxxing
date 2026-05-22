@@ -1012,7 +1012,7 @@ async function testJ_IsSafePath() {
     '../evil.md',
     '/etc/passwd',
     'TASKS-../x.md',
-    '06-Tasks/../../etc/passwd',
+    '05-Tasks/../../etc/passwd',
     'TASKS-HACKED.md',               // not in allowlist
     'FIDGETCODING/evil/TASKS-x.md',  // wrong subfolder
     '../TASKS-URGENT.md',
@@ -1038,9 +1038,9 @@ async function testJ_IsSafePath() {
     'FIDGETCODING/misc-building/TASKS-FIDGETCODING-misc-building.md',
     'FIDGETCODING/TASKS-FIDGETCODING.md',
     'FUTURE-SCHEDULING/TASKS-FUTURE-SCHEDULING.md',
-    // with 06-Tasks/ prefix also OK
-    '06-Tasks/TASKS-URGENT.md',
-    '06-Tasks/FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
+    // with 05-Tasks/ prefix also OK
+    '05-Tasks/TASKS-URGENT.md',
+    '05-Tasks/FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
   ];
   for (const p of accepts) {
     assert.equal(isSafePath(p), true, `should accept: ${JSON.stringify(p)}`);
@@ -1073,10 +1073,10 @@ async function testK_ParseAreaRoundTrip() {
     ['TASKS-MMA.md', 'MMA', '10 MMA'],
     ['TASKS-PARZVL.md', 'PARZVL', '11 PARZVL'],
     ['TASKS-WAGMI.md', 'WAGMI', '12 WAGMI'],
-    // Also test with 06-Tasks/ prefix
-    ['06-Tasks/TASKS-URGENT.md', 'URGENT', '01 URGENT'],
+    // Also test with 05-Tasks/ prefix
+    ['05-Tasks/TASKS-URGENT.md', 'URGENT', '01 URGENT'],
     [
-      '06-Tasks/FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
+      '05-Tasks/FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
       'FIDGETCODING-CONTENT',
       '06 FIDGETCODING · content',
     ],
@@ -1112,7 +1112,7 @@ async function testL_FencedCodeBlockSkip() {
     '',
     '```tasks',
     'not done',
-    'path includes 06-Tasks',
+    'path includes 05-Tasks',
     '- [ ] fake task inside fence — should NOT be parsed',
     '- [ ] another fake inside fence',
     '```',

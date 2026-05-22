@@ -4,7 +4,7 @@
 
 # task-maxxing
 
-![task-maxxing](https://raw.githubusercontent.com/lorecraft-io/task-maxxing/main/taskmaxxing.png)
+![task-maxxing](https://raw.githubusercontent.com/fidgetcoding/task-maxxing/main/taskmaxxing.png)
 
 **Two-way task sync between Obsidian and Morgen — a DIY kit.**
 
@@ -15,7 +15,7 @@
 </div>
 
 > [!WARNING]
-> **Prerequisite — [`2ndBrain-mogging`](https://github.com/lorecraft-io/2ndBrain-mogging) must be installed and running first.** task-maxxing syncs the `06-Tasks/` folder of that vault — if the vault isn't there, this kit has nothing to sync. Don't clone this repo until 2ndBrain-mogging is live.
+> **Prerequisite — [`2ndBrain-mogging`](https://github.com/fidgetcoding/2ndBrain-mogging) must be installed and running first.** task-maxxing syncs the `05-Tasks/` folder of that vault — if the vault isn't there, this kit has nothing to sync. Don't clone this repo until 2ndBrain-mogging is live.
 
 > [!NOTE]
 > **2026-05-04 cutover:** Notion was dropped from this kit. The maintained pipeline is now **Obsidian ↔ Morgen** two-way. The W3 (Notion → Obsidian) workflow has been removed and W1 no longer touches the Notion API. If you cloned the kit before this date and want the original three-way mode, pin to a commit on `main` before this banner. References to Notion still appear in some doc files (ARCHITECTURE.md, DESIGN-RATIONALE.md, etc.) — those sections are kept as historical context but the working code is now two-way.
@@ -76,7 +76,7 @@ The missing piece is **two-way sync with one canonical source**. `task-maxxing` 
 ### What you actually get
 
 - **Edit anywhere.** Check a task off in Morgen on your phone, it's checked in Obsidian inside a minute.
-- **One source of truth.** Your `.md` files in `06-Tasks/` are canonical. Morgen is a regenerated mirror — if it drifts, the markdown wins.
+- **One source of truth.** Your `.md` files in `05-Tasks/` are canonical. Morgen is a regenerated mirror — if it drifts, the markdown wins.
 - **Git-backed history.** Every task edit is a git commit. Time-travel, blame, diffs, the works.
 - **No vendor lock-in.** Turn the whole pipeline off tomorrow and your data is still a folder of markdown files.
 
@@ -89,7 +89,7 @@ Bidirectional. Edit anywhere; it converges everywhere. Two sub-workflows, one or
 ```
                        ┌────────────────────────┐
                        │  Obsidian (canonical)  │
-                       │  06-Tasks/*.md         │
+                       │  05-Tasks/*.md         │
                        │  + .sync-state.json    │
                        └────────────▲───────────┘
                                     │
@@ -123,7 +123,7 @@ Bidirectional. Edit anywhere; it converges everywhere. Two sub-workflows, one or
             └──────────────────────────────────────┘
 ```
 
-**How the loop closes:** the local daemon makes the GitHub repo a two-way mirror of `06-Tasks/` on disk — it pushes your edits up AND pulls W2's commits back down. So once W2 lands a commit, the change reaches your Obsidian vault on the next daemon tick without you doing anything.
+**How the loop closes:** the local daemon makes the GitHub repo a two-way mirror of `05-Tasks/` on disk — it pushes your edits up AND pulls W2's commits back down. So once W2 lands a commit, the change reaches your Obsidian vault on the next daemon tick without you doing anything.
 
 ### Workflow glossary
 
@@ -135,13 +135,13 @@ Bidirectional. Edit anywhere; it converges everywhere. Two sub-workflows, one or
 
 > **Why an orchestrator?** Two independent cron triggers can race each other and interleave commits — W1 mid-run clobbers a `.sync-state.json` update from W2, or vice versa. The orchestrator sequences `pull from Morgen → push merged state out` so the state file mutates serially. If you really want the un-sequenced version (e.g. you're self-hosting and have your own scheduling), pass `SKIP_ORCHESTRATOR=1` to the installer and leave W1/W2's own triggers active.
 >
-> **Trade-off: W1 is no longer push-instant.** In the default install, you leave W1 inactive so only W0 can fire it — which means an edit to `06-Tasks/` propagates on the next 20-min tick, not on the next `git push`. If you want instant push→Morgen, either (a) activate W1 alongside W0 and accept occasional double-fires (n8n handles duplicate work cheaply because the jsCode is diff-aware), or (b) use `SKIP_ORCHESTRATOR=1` and run bare W1/W2 with their own triggers.
+> **Trade-off: W1 is no longer push-instant.** In the default install, you leave W1 inactive so only W0 can fire it — which means an edit to `05-Tasks/` propagates on the next 20-min tick, not on the next `git push`. If you want instant push→Morgen, either (a) activate W1 alongside W0 and accept occasional double-fires (n8n handles duplicate work cheaply because the jsCode is diff-aware), or (b) use `SKIP_ORCHESTRATOR=1` and run bare W1/W2 with their own triggers.
 >
 > **Known quirk: W0 self-overlap.** n8n's schedule triggers don't skip-if-running. If a 20-min tick lands while the previous W0 is still executing (possible during a large backfill), the second W0 queues up and starts immediately after — which re-introduces the very race W0 was built to prevent. In practice a full W2+W1 cycle finishes in well under 60 seconds, so the overlap window is tiny. If you see it, bump W0 to every 30 min.
 
 ### Daemon (local, macOS)
 
-A small Node process watches `06-Tasks/**/*.md`, debounces edits, and runs `git add && git commit && git push`. The daemon is the **only** part of the system that touches your local filesystem — both n8n workflows talk to your vault through the GitHub API. This keeps n8n cloud out of your disk and lets W2 write back to markdown as regular commits.
+A small Node process watches `05-Tasks/**/*.md`, debounces edits, and runs `git add && git commit && git push`. The daemon is the **only** part of the system that touches your local filesystem — both n8n workflows talk to your vault through the GitHub API. This keeps n8n cloud out of your disk and lets W2 write back to markdown as regular commits.
 
 > *(A note on "daemon" — as a non-technical builder, I get excited seeing the word "daemon" because, in my experience — correct me if I'm wrong — it just means something might happen automatically, behind-the-scenes, or fast. I'm probably a bit wrong in some way, but I **won't** look it up right now because I feel a deep sense of pride in this parenthetical sentence.)*
 
@@ -151,8 +151,8 @@ A small Node process watches `06-Tasks/**/*.md`, debounces edits, and runs `git 
 
 You'll need accounts (free tiers are fine for all of these except Morgen Pro):
 
-- **Obsidian vault** with a `06-Tasks/` folder (any structure — area files named `TASKS-*.md`)
-  - 👉 **Don't have a vault yet?** Use my [**2ndBrain-mogging**](https://github.com/lorecraft-io/2ndBrain-mogging) setup as your starting point. It's the best-of-5 different second-brain systems — I merged the good parts of Karpathy / Jens / eugeniu / AgriciDaniel / NicholasSpisak, cut the dead folders and redundant logic, and shipped what's left. Everything you want, everything you actually need, nothing you don't. `task-maxxing` drops straight into its `06-Tasks/` folder.
+- **Obsidian vault** with a `05-Tasks/` folder (any structure — area files named `TASKS-*.md`)
+  - 👉 **Don't have a vault yet?** Use my [**2ndBrain-mogging**](https://github.com/fidgetcoding/2ndBrain-mogging) setup as your starting point. It's the best-of-5 different second-brain systems — I merged the good parts of Karpathy / Jens / eugeniu / AgriciDaniel / NicholasSpisak, cut the dead folders and redundant logic, and shipped what's left. Everything you want, everything you actually need, nothing you don't. `task-maxxing` drops straight into its `05-Tasks/` folder.
 - **Morgen account** (Pro tier, for API access)
 - **n8n cloud** account (or self-hosted — you do you)
 - **GitHub account** with room for one private repo
@@ -166,7 +166,7 @@ You'll need accounts (free tiers are fine for all of these except Morgen Pro):
 
 ```bash
 # 1. Clone
-git clone https://github.com/lorecraft-io/task-maxxing.git
+git clone https://github.com/fidgetcoding/task-maxxing.git
 cd task-maxxing
 
 # 2. Install deps (repo has zero runtime deps — just locks package.json)
@@ -181,7 +181,7 @@ set -a; source .env; set +a
 
 # 4. Install the local daemon (wraps Node in a .app bundle + loads launchd)
 BUNDLE_ID=io.example.task-maxxing-daemon \
-WATCH_PATH="$HOME/path/to/your-vault/06-Tasks" \
+WATCH_PATH="$HOME/path/to/your-vault/05-Tasks" \
 SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
   bash daemon/install-daemon.sh
 # Then grant Full Disk Access to the printed .app bundle in System Settings.
@@ -279,7 +279,7 @@ None of these are required for the two-way sync — W1/W2 talk to Morgen with a 
   ```bash
   claude mcp add morgen -- npx -y fidgetcoding-morgen-mcp
   ```
-  Lets Claude Code create / update / reflow Morgen tasks and events from the CLI. Repo: [`lorecraft-io/morgen-mcp`](https://github.com/lorecraft-io/morgen-mcp).
+  Lets Claude Code create / update / reflow Morgen tasks and events from the CLI. Repo: [`fidgetcoding/morgen-mcp`](https://github.com/fidgetcoding/morgen-mcp).
 - **n8n MCP** — manage the sync workflows from Claude Code after they're installed. Step 8 of the [Quickstart](#quickstart) wires this up with the same `N8N_API_KEY` / `N8N_BASE_URL` the installer already uses:
   ```bash
   claude mcp add n8n-mcp \
@@ -290,7 +290,7 @@ None of these are required for the two-way sync — W1/W2 talk to Morgen with a 
   Heads up: `n8n-mcp` is maintained by [czlonkowski](https://github.com/czlonkowski/n8n-mcp), unaffiliated with n8n.io or lorecraft-io. Third-party package on the unscoped `n8n-mcp` name.
 - **Obsidian** — the app itself. Download at [obsidian.md](https://obsidian.md). Pair it with the [Obsidian Tasks plugin](https://publish.obsidian.md/tasks/) (Clare Macrae) — that's the plugin whose syntax `task-maxxing` parses.
 
-If you want all of this pre-wired alongside Claude Code, shell aliases, and a dozen other productivity MCPs, [`cli-maxxing`](https://github.com/lorecraft-io/cli-maxxing) is the one-shot installer.
+If you want all of this pre-wired alongside Claude Code, shell aliases, and a dozen other productivity MCPs, [`cli-maxxing`](https://github.com/fidgetcoding/cli-maxxing) is the one-shot installer.
 
 ---
 
@@ -300,8 +300,8 @@ This is one of three repos in the stack:
 
 | Repo | What it does |
 |------|-------------|
-| [`cli-maxxing`](https://github.com/lorecraft-io/cli-maxxing) | Foundation — Claude Code, shell aliases, dev tools, productivity MCPs (Morgen, Motion, n8n, Notion, Playwright, SwiftKit). |
-| [`creativity-maxxing`](https://github.com/lorecraft-io/creativity-maxxing) | Design skills, video prompt engines, transcription lab, Canva in terminal. |
+| [`cli-maxxing`](https://github.com/fidgetcoding/cli-maxxing) | Foundation — Claude Code, shell aliases, dev tools, productivity MCPs (Morgen, Motion, n8n, Notion, Playwright, SwiftKit). |
+| [`creativity-maxxing`](https://github.com/fidgetcoding/creativity-maxxing) | Design skills, video prompt engines, transcription lab, Canva in terminal. |
 | **`task-maxxing`** | **This repo** — two-way task sync, Obsidian ↔ Morgen. |
 
 Install `cli-maxxing` first (it drops `claude` onto your `PATH`). After that, `creativity-maxxing` and `task-maxxing` can be installed in either order.
@@ -316,7 +316,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Credits
 
-Built by **Nate Davidovich** ([lorecraft-io](https://github.com/lorecraft-io)) after a few too many hours wondering why nobody else had shipped a working two-way task sync between a markdown vault and an auto-scheduling calendar. This is the reference implementation that powers my personal 2ndBrain vault.
+Built by **Nate Davidovich** ([fidgetcoding](https://github.com/fidgetcoding)) after a few too many hours wondering why nobody else had shipped a working two-way task sync between a markdown vault and an auto-scheduling calendar. This is the reference implementation that powers my personal 2ndBrain vault.
 
 [⤴ back to top](#top)
 

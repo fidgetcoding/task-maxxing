@@ -6,7 +6,7 @@ How the kit actually works. If you just want it running, see [SETUP.md](SETUP.md
 
 ## TL;DR (30 seconds)
 
-- **What it does.** Keeps your tasks in sync, two ways, between **Obsidian markdown** (your `06-Tasks/` folder) and **Morgen** (the calendar that auto-schedules your day).
+- **What it does.** Keeps your tasks in sync, two ways, between **Obsidian markdown** (your `05-Tasks/` folder) and **Morgen** (the calendar that auto-schedules your day).
 - **What it solves.** Edit a task in either place — tick it off on your phone in Morgen, or rewrite the date in Obsidian — and the other side catches up on the next 20-minute tick. No manual double-entry, no SaaS lock-in, no proprietary file formats.
 - **What you get after install.** A local launchd daemon that commits vault edits to a private GitHub repo, two n8n workflows (`W1`, `W2`) sequenced by an orchestrator (`W0`) every 20 minutes, a watchdog workflow that opens an issue if the sync goes silent, and a `.sync-state.json` file that carries the cross-app identity map.
 - **What's canonical.** Your markdown. Always. Morgen is a regenerated mirror — if it disagrees with the vault, the vault wins.
@@ -41,7 +41,7 @@ The production graph is one orchestrator firing two child workflows in series, e
 ```
                               ┌────────────────────────────┐
                               │      OBSIDIAN VAULT        │  <── you edit markdown here
-                              │      06-Tasks/*.md         │
+                              │      05-Tasks/*.md         │
                               │      .sync-state.json      │
                               └─────────────┬──────────────┘
                                             │
@@ -129,7 +129,7 @@ Every invariant in the system follows from that one rule:
 **Type:** zero-dep Node script (`src/auto-commit.js`) invoked by macOS `launchd`.
 
 **Trigger:**
-- `WatchPaths` on `06-Tasks/**` (debounced via `ThrottleInterval=30s`).
+- `WatchPaths` on `05-Tasks/**` (debounced via `ThrottleInterval=30s`).
 - `StartInterval=300s` heartbeat so it runs at least every 5 minutes even when nothing fires.
 
 **What it does:**
@@ -183,7 +183,7 @@ That's the entire workflow. The only thing it owns is the run order.
 **Trigger:** Called by W0 via `executeWorkflow`. (A GitHub push trigger is present in the workflow JSON but **dormant in the default install** — leave it inactive unless you opt out of the orchestrator with `SKIP_ORCHESTRATOR=1`.)
 
 **Inputs:**
-- The current contents of `06-Tasks/**/TASKS-*.md` from the GitHub mirror (read via Tree API).
+- The current contents of `05-Tasks/**/TASKS-*.md` from the GitHub mirror (read via Tree API).
 - The current `.sync-state.json` from the same repo.
 - The previous synced state from `workflowStaticData.global.lastSyncedState`.
 
@@ -285,7 +285,7 @@ That's the entire workflow. The only thing it owns is the run order.
 
 ## The `.sync-state.json` file
 
-Single source of truth for cross-app identity mapping. Lives at `06-Tasks/.sync-state.json` in your vault, mirrored to the same path in the GitHub tasks repo.
+Single source of truth for cross-app identity mapping. Lives at `05-Tasks/.sync-state.json` in your vault, mirrored to the same path in the GitHub tasks repo.
 
 ### Schema
 
@@ -297,7 +297,7 @@ Single source of truth for cross-app identity mapping. Lives at `06-Tasks/.sync-
   "tasks": {
     "<taskHash>": {
       "hash": "a3f9d2c1b8e4f7a6d5c9e2b1",
-      "sourceFile": "06-Tasks/TASKS-URGENT.md",
+      "sourceFile": "05-Tasks/TASKS-URGENT.md",
       "sourceLine": 12,
       "text": "Ship task-maxxing v0.2",
       "completed": false,
@@ -350,7 +350,7 @@ Single source of truth for cross-app identity mapping. Lives at `06-Tasks/.sync-
 2. **W1 next tick.** Sees a task line with no 🆔, no entry in `byObsidianId`. Creates a Morgen task, mints `m-XXXXXXXX`, writes the line back to markdown with the new 🆔 + the new state entry, all in one `[bot:W1]` commit.
 3. **Edit due date.** Daemon commits. Next W1 tick sees the same 🆔 with a different hash → `update` op against Morgen → updates `lastSyncedHash` in state.
 4. **Tick complete in Morgen.** Next W2 tick sees `closed`, writes `- [x]` to the markdown line, commits with `[bot:W2]`.
-5. **Sync-state corruption.** Delete `06-Tasks/.sync-state.json`, re-run `scripts/morgen-backfill.js`. The state rebuilds from markdown 🆔s + Morgen IDs. The markdown is canonical, so nothing is lost.
+5. **Sync-state corruption.** Delete `05-Tasks/.sync-state.json`, re-run `scripts/morgen-backfill.js`. The state rebuilds from markdown 🆔s + Morgen IDs. The markdown is canonical, so nothing is lost.
 
 ### "Append-only" — clarification
 

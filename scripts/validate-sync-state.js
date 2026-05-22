@@ -112,8 +112,8 @@ function main() {
     }
     if (typeof e.sourceFile !== 'string' || !e.sourceFile) {
       errors.push(`${where}.sourceFile must be a non-empty string`);
-    } else if (e.sourceFile.startsWith('06-Tasks/')) {
-      warnings.push(`${where}.sourceFile should not include the "06-Tasks/" prefix`);
+    } else if (e.sourceFile.startsWith('05-Tasks/')) {
+      warnings.push(`${where}.sourceFile should not include the "05-Tasks/" prefix`);
     }
     if (typeof e.text !== 'string') {
       errors.push(`${where}.text must be a string`);

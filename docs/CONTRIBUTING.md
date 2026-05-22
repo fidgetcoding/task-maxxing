@@ -45,13 +45,13 @@ That's it. No PR, no review cycle.
    ```bash
    git clone https://github.com/{{YOUR_USERNAME}}/task-maxxing.git
    cd task-maxxing
-   git remote add upstream https://github.com/lorecraft-io/task-maxxing.git
+   git remote add upstream https://github.com/fidgetcoding/task-maxxing.git
    ```
 
 3. **Make your changes** in `main` directly. This repo doesn't use feature branches.
 4. **Run the tests** (see below).
 5. **Commit and push** to your fork.
-6. **Open a PR** against `lorecraft-io/task-maxxing:main`. In the description:
+6. **Open a PR** against `fidgetcoding/task-maxxing:main`. In the description:
    - What the change does.
    - Why it matters.
    - Which test scenarios you ran, and whether they passed.
@@ -204,6 +204,6 @@ Don't create new top-level directories without talking to the maintainer first.
 
 ## Questions?
 
-Open a [discussion](https://github.com/lorecraft-io/task-maxxing/discussions) rather
+Open a [discussion](https://github.com/fidgetcoding/task-maxxing/discussions) rather
 than an issue. Discussions are better for "how would I...?" questions; issues are for
 "this is broken".

@@ -5,7 +5,7 @@
   "description": "Two-way task sync between Obsidian and Morgen",
   "license": "MIT",
   "author": "Nate Davidovich / lorecraft-io",
-  "repository": "github:lorecraft-io/task-maxxing",
+  "repository": "github:fidgetcoding/task-maxxing",
   "engines": {
     "node": ">=20"
   },

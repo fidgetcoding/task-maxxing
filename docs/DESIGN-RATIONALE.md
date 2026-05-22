@@ -123,10 +123,10 @@ The reasons Obsidian wins:
 
 **Plain text in git is debuggable in a way an API isn't.** When the
 sync misbehaves, the first question is "what does the source say?"
-For Obsidian that's `cat 06-Tasks/TASKS-URGENT.md`. For Morgen that's
+For Obsidian that's `cat 05-Tasks/TASKS-URGENT.md`. For Morgen that's
 an authenticated API call from a machine with the right token, hoping
 the response isn't paginated. `git log -S "ship the kit"
-06-Tasks/TASKS-URGENT.md` answers six months of "when did this task
+05-Tasks/TASKS-URGENT.md` answers six months of "when did this task
 appear?" questions in one shell command.
 
 **Bulk edits are trivial.** Renaming a project from `LORECRAFT-HQ` to

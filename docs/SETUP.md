@@ -8,7 +8,7 @@ Zero-to-working install for **task-maxxing**, the two-way Obsidian ↔ Morgen ta
 
 ## What you'll have at the end
 
-- A 2-way live sync between your Obsidian vault's `06-Tasks/` folder and your Morgen account.
+- A 2-way live sync between your Obsidian vault's `05-Tasks/` folder and your Morgen account.
 - A local launchd daemon on your Mac that auto-commits every task edit and pushes it to a private GitHub repo.
 - Three workflows running in n8n cloud — **W0** (orchestrator), **W1** (Obsidian → Morgen), **W2** (Morgen → Obsidian) — firing on a 20-minute cycle.
 
@@ -20,7 +20,7 @@ Tick a checkbox in either Obsidian or Morgen, the other side catches up within ~
 
 You need accounts at:
 
-- **Obsidian** — desktop app at [obsidian.md](https://obsidian.md), with a vault that has a `06-Tasks/` folder. If you don't have a vault yet, clone [`2ndBrain-mogging`](https://github.com/lorecraft-io/2ndBrain-mogging) first — it's the recommended starting layout and `task-maxxing` drops straight into its `06-Tasks/`.
+- **Obsidian** — desktop app at [obsidian.md](https://obsidian.md), with a vault that has a `05-Tasks/` folder. If you don't have a vault yet, clone [`2ndBrain-mogging`](https://github.com/fidgetcoding/2ndBrain-mogging) first — it's the recommended starting layout and `task-maxxing` drops straight into its `05-Tasks/`.
 - **Obsidian Tasks plugin** by Clare Macrae — install via Obsidian → Settings → Community plugins → Browse → "Tasks". Enable it.
 - **GitHub account** with one private repo slot free.
 - **n8n cloud** — sign up at [n8n.io](https://n8n.io). The free Starter tier works; the Pro tier is recommended for reliable cron triggers.
@@ -47,11 +47,13 @@ brew install node git gh jq
 
 Make sure the Tasks plugin is enabled, then create the folder and one sample file the sync needs.
 
+> **Don't put your vault under `~/Desktop`, `~/Documents`, or `~/Downloads`** — those are macOS permission-protected (TCC/Full-Disk-Access) and break terminal/git access for the daemon. A home-level path like `~/BRAIN2` works.
+
 ```bash
-mkdir -p /path/to/your-vault/06-Tasks
+mkdir -p /path/to/your-vault/05-Tasks
 ```
 
-Inside the vault, create `06-Tasks/TASKS-URGENT.md`:
+Inside the vault, create `05-Tasks/TASKS-URGENT.md`:
 
 ```markdown
 # Urgent
@@ -75,8 +77,8 @@ The canonical task line shape is mandatory — the W1 parser only matches this t
 ## Step 1 — Clone the repo and prep your env file
 
 ```bash
-cd ~/Desktop      # or wherever you keep dev repos
-git clone https://github.com/lorecraft-io/task-maxxing.git
+cd ~/code      # or wherever you keep dev repos — NOT ~/Desktop, ~/Documents, or ~/Downloads (macOS permission-protected; breaks terminal/git access)
+git clone https://github.com/fidgetcoding/task-maxxing.git
 cd task-maxxing
 npm install       # repo has zero runtime deps; this just locks package.json
 
@@ -87,8 +89,8 @@ $EDITOR .env
 You'll fill in `.env` as you walk through the next steps. The shape you'll end up with:
 
 ```bash
-VAULT_PATH=/absolute/path/to/your-vault/06-Tasks
-TASK_MAXXING_REPO=/absolute/path/to/your-vault/06-Tasks   # same value
+VAULT_PATH=/absolute/path/to/your-vault/05-Tasks
+TASK_MAXXING_REPO=/absolute/path/to/your-vault/05-Tasks   # same value
 
 GITHUB_REPO_OWNER={{YOUR_GH_USERNAME}}
 GITHUB_REPO_NAME={{YOUR_VAULT_NAME}}-tasks
@@ -107,7 +109,7 @@ Leave the file open. Notion env vars (`NOTION_TOKEN`, `NOTION_DATABASE_ID`) are 
 
 ## Step 2 — GitHub repo for sync state
 
-n8n cloud can't reach your laptop's filesystem, so the sync uses a tiny private GitHub repo as the shared state surface. The local daemon pushes your `06-Tasks/` markdown into it; n8n reads and writes it via the GitHub API.
+n8n cloud can't reach your laptop's filesystem, so the sync uses a tiny private GitHub repo as the shared state surface. The local daemon pushes your `05-Tasks/` markdown into it; n8n reads and writes it via the GitHub API.
 
 ### 2a. Create the private repo
 
@@ -125,17 +127,17 @@ GITHUB_REPO_OWNER={{YOUR_GH_USERNAME}}
 GITHUB_REPO_NAME={{YOUR_VAULT_NAME}}-tasks
 ```
 
-### 2b. Initialize `06-Tasks/` as a git working tree
+### 2b. Initialize `05-Tasks/` as a git working tree
 
-The simplest setup is to make `06-Tasks/` itself a git working tree pointing at the new mirror repo. (If your vault is already a git repo, treat `06-Tasks/` as a submodule instead — same end state.)
+The simplest setup is to make `05-Tasks/` itself a git working tree pointing at the new mirror repo. (If your vault is already a git repo, treat `05-Tasks/` as a submodule instead — same end state.)
 
 ```bash
-cd /path/to/your-vault/06-Tasks
+cd /path/to/your-vault/05-Tasks
 git init
 git remote add origin https://github.com/{{YOUR_GH_USERNAME}}/{{YOUR_VAULT_NAME}}-tasks.git
 git branch -M main
 git add .
-git commit -m "[bot:save] initial 06-Tasks snapshot"
+git commit -m "[bot:save] initial 05-Tasks snapshot"
 git push -u origin main
 ```
 
@@ -216,7 +218,7 @@ N8N_API_KEY={{YOUR_N8N_KEY}}
 ### 4c. Import the workflows
 
 ```bash
-cd ~/Desktop/task-maxxing
+cd ~/code/task-maxxing
 set -a; source .env; set +a    # reload all the new values
 
 # Preview the rendered JSON without sending it (writes to /tmp)
@@ -242,13 +244,13 @@ Open the n8n UI → **Workflows**. You should see three new entries, all current
 
 ## Step 5 — Local daemon (auto-commit)
 
-The daemon watches `06-Tasks/` via launchd's `WatchPaths`, debounces, and runs `git add && git commit && git push` once per fire (30s throttle, 5min heartbeat). This is the **only** part of the system that touches your local disk.
+The daemon watches `05-Tasks/` via launchd's `WatchPaths`, debounces, and runs `git add && git commit && git push` once per fire (30s throttle, 5min heartbeat). This is the **only** part of the system that touches your local disk.
 
 ```bash
-cd ~/Desktop/task-maxxing
+cd ~/code/task-maxxing
 
 BUNDLE_ID=io.example.task-maxxing-daemon \
-WATCH_PATH="/path/to/your-vault/06-Tasks" \
+WATCH_PATH="/path/to/your-vault/05-Tasks" \
 SCRIPT_PATH="$(pwd)/src/auto-commit.js" \
   bash daemon/install-daemon.sh
 ```
@@ -321,7 +323,7 @@ Don't activate W0 yet — manually fire it once and watch the executions panel.
 2. Click **Execute Workflow** (top-right).
 3. Watch the **Executions** tab. W0 should call W2 first (Morgen → Obsidian), then W1 (Obsidian → Morgen). Both should finish green.
 4. In Morgen, look for your "task-maxxing smoke test" task. It should be in your inbox list with priority High and due 2099-12-31.
-5. In Obsidian, open `06-Tasks/TASKS-URGENT.md`. The line you wrote should now have a `🆔 m-XXXXXXXX` token (W1 minted it during the run).
+5. In Obsidian, open `05-Tasks/TASKS-URGENT.md`. The line you wrote should now have a `🆔 m-XXXXXXXX` token (W1 minted it during the run).
 
 If both checks pass, the sync is working end-to-end. If not, jump to [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
@@ -341,7 +343,7 @@ That's it. The sync is now live. W0 fires every 20 minutes; an edit on either si
 
 1. In Morgen, tick the "task-maxxing smoke test" task complete.
 2. Wait one W0 cycle (≤20 min).
-3. Open `06-Tasks/TASKS-URGENT.md` — the line should have flipped from `- [ ]` to `- [x]`, and `git log --oneline` on the mirror repo should show a `[bot:w2]` commit applying the change.
+3. Open `05-Tasks/TASKS-URGENT.md` — the line should have flipped from `- [ ]` to `- [x]`, and `git log --oneline` on the mirror repo should show a `[bot:w2]` commit applying the change.
 
 Then test the other direction:
 
@@ -391,7 +393,7 @@ If you set this up before 2026-05-04, your install still has Notion in the loop.
 1. **Pull the latest code:**
 
    ```bash
-   cd ~/Desktop/task-maxxing
+   cd ~/code/task-maxxing
    git pull origin main
    ```
 
@@ -406,7 +408,7 @@ If you set this up before 2026-05-04, your install still has Notion in the loop.
 
    Activate the new W0 only.
 
-Your `06-Tasks/` markdown, your Morgen tasks, and your `.sync-state.json` keep working — none of those changed shape. The Notion database is no longer touched; you can archive it (or keep it around as a read-only backup; the kit will not write to it again). Leave `NOTION_TOKEN` / `NOTION_DATABASE_ID` unset in `.env`.
+Your `05-Tasks/` markdown, your Morgen tasks, and your `.sync-state.json` keep working — none of those changed shape. The Notion database is no longer touched; you can archive it (or keep it around as a read-only backup; the kit will not write to it again). Leave `NOTION_TOKEN` / `NOTION_DATABASE_ID` unset in `.env`.
 
 ---
 

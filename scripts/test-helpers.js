@@ -165,8 +165,8 @@ test('areaKeyToFile: URGENT → TASKS-URGENT.md', () => {
 test('isSafePath: TASKS-URGENT.md is safe', () => {
   assert.equal(helpers.isSafePath('TASKS-URGENT.md'), true);
 });
-test('isSafePath: 06-Tasks/TASKS-LORECRAFT.md is safe (leading dir stripped)', () => {
-  assert.equal(helpers.isSafePath('06-Tasks/TASKS-LORECRAFT.md'), true);
+test('isSafePath: 05-Tasks/TASKS-LORECRAFT.md is safe (leading dir stripped)', () => {
+  assert.equal(helpers.isSafePath('05-Tasks/TASKS-LORECRAFT.md'), true);
 });
 test('isSafePath: traversal ../ is blocked', () => {
   assert.equal(helpers.isSafePath('../etc/passwd'), false);
