@@ -287,7 +287,7 @@ None of these are required for the two-way sync — W1/W2 talk to Morgen with a 
     --env N8N_API_KEY="${N8N_API_KEY}" \
     -- npx -y n8n-mcp
   ```
-  Heads up: `n8n-mcp` is maintained by [czlonkowski](https://github.com/czlonkowski/n8n-mcp), unaffiliated with n8n.io or lorecraft-io. Third-party package on the unscoped `n8n-mcp` name.
+  Heads up: `n8n-mcp` is maintained by [czlonkowski](https://github.com/czlonkowski/n8n-mcp), unaffiliated with n8n.io or fidgetcoding. Third-party package on the unscoped `n8n-mcp` name.
 - **Obsidian** — the app itself. Download at [obsidian.md](https://obsidian.md). Pair it with the [Obsidian Tasks plugin](https://publish.obsidian.md/tasks/) (Clare Macrae) — that's the plugin whose syntax `task-maxxing` parses.
 
 If you want all of this pre-wired alongside Claude Code, shell aliases, and a dozen other productivity MCPs, [`cli-maxxing`](https://github.com/fidgetcoding/cli-maxxing) is the one-shot installer.
