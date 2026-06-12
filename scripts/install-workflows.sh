@@ -124,8 +124,10 @@ for pair in "${WORKFLOWS[@]}"; do
     exit 1
   fi
 
-  rendered="$(mktemp -t "${label}.rendered.XXXXXX").json"
-  : > "${rendered}"
+  # Use the mktemp-created file directly (0600 perms — it holds rendered
+  # secrets). Appending a suffix to the returned path would write the tokens
+  # into a fresh umask-permissioned file and orphan the mktemp one.
+  rendered="$(mktemp -t "${label}.rendered.XXXXXX")"
 
   sed \
     -e "s|{{GITHUB_TOKEN}}|${GH_E}|g" \
@@ -139,10 +141,11 @@ for pair in "${WORKFLOWS[@]}"; do
   if grep -q '{{[A-Z_]*}}' "${rendered}"; then
     echo "[install-workflows] ERROR: unreplaced placeholders in ${rendered}:" >&2
     grep -oE '\{\{[A-Z_]+\}\}' "${rendered}" | sort -u >&2
+    rm -f "${rendered}"
     exit 1
   fi
 
-  clean="$(mktemp -t "${label}.clean.XXXXXX").json"
+  clean="$(mktemp -t "${label}.clean.XXXXXX")"
   jq '{name, nodes, connections, settings}' "${rendered}" > "${clean}"
 
   if [[ "${DRY_RUN}" == "1" ]]; then
@@ -164,6 +167,7 @@ for pair in "${WORKFLOWS[@]}"; do
   if [[ -z "${wf_id}" ]]; then
     echo "[install-workflows] ERROR: no id in response for ${label}:" >&2
     printf '%s\n' "${response}" >&2
+    rm -f "${rendered}" "${clean}"
     exit 1
   fi
 
@@ -198,8 +202,7 @@ else
   W1_ID_E="$(escape_sed "${W1_ID}")"
   W2_ID_E="$(escape_sed "${W2_ID}")"
 
-  orch_rendered="$(mktemp -t W0.rendered.XXXXXX).json"
-  : > "${orch_rendered}"
+  orch_rendered="$(mktemp -t W0.rendered.XXXXXX)"
   sed \
     -e "s|{{W1_WORKFLOW_ID}}|${W1_ID_E}|g" \
     -e "s|{{W2_WORKFLOW_ID}}|${W2_ID_E}|g" \
@@ -208,10 +211,11 @@ else
   if grep -q '{{[A-Z_]*}}' "${orch_rendered}"; then
     echo "[install-workflows] ERROR: unreplaced placeholders in orchestrator:" >&2
     grep -oE '\{\{[A-Z_]+\}\}' "${orch_rendered}" | sort -u >&2
+    rm -f "${orch_rendered}"
     exit 1
   fi
 
-  orch_clean="$(mktemp -t W0.clean.XXXXXX).json"
+  orch_clean="$(mktemp -t W0.clean.XXXXXX)"
   jq '{name, nodes, connections, settings}' "${orch_rendered}" > "${orch_clean}"
 
   if [[ "${DRY_RUN}" == "1" ]]; then
@@ -231,6 +235,7 @@ else
     if [[ -z "${wf_id}" ]]; then
       echo "[install-workflows] ERROR: no id in response for W0:" >&2
       printf '%s\n' "${response}" >&2
+      rm -f "${orch_rendered}" "${orch_clean}"
       exit 1
     fi
 

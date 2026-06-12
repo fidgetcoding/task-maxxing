@@ -97,7 +97,10 @@ PLIST
 echo "[install-daemon] rendering ${PLIST_DEST}"
 
 escape_sed() {
-  printf '%s' "$1" | sed -e 's/[&/|]/\\&/g'
+  # Escape the chars special in a sed replacement with '|' as delimiter:
+  # & (whole-match), \ (escape), | (delimiter), / (harmless but consistent
+  # with scripts/install-workflows.sh).
+  printf '%s' "$1" | sed -e 's/[&/\|]/\\&/g'
 }
 
 tmp_plist="$(mktemp)"
