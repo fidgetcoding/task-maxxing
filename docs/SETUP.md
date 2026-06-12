@@ -170,7 +170,7 @@ GITHUB_TOKEN=github_pat_{{YOUR_PAT}}
 
 ## Step 3 — Morgen API token
 
-1. Open [platform.morgen.so/integrations/developers-api](https://platform.morgen.so/integrations/developers-api) and sign in.
+1. Open [platform.morgen.so/developers-api](https://platform.morgen.so/developers-api) and sign in.
 2. Click **Create API key**, name it `task-maxxing`.
 3. Copy the key. Paste into `.env`:
 
@@ -221,7 +221,8 @@ N8N_API_KEY={{YOUR_N8N_KEY}}
 cd ~/code/task-maxxing
 set -a; source .env; set +a    # reload all the new values
 
-# Preview the rendered JSON without sending it (writes to /tmp)
+# Preview the rendered JSON without sending it (writes into your temp dir —
+# $TMPDIR on macOS, /tmp on most Linux — and prints the file paths)
 DRY_RUN=1 ./scripts/install-workflows.sh
 
 # Import for real

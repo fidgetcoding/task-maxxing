@@ -206,7 +206,7 @@ claude mcp add n8n-mcp \
   --env N8N_API_KEY="${N8N_API_KEY}" \
   -- npx -y n8n-mcp
 
-# 9. Smoke test — see docs/SETUP.md section 14
+# 9. Smoke test — see docs/SETUP.md Step 7 (first sync) + Step 8 (round-trip)
 ```
 
 Full walkthrough with every click: **[docs/SETUP.md](docs/SETUP.md)**.
