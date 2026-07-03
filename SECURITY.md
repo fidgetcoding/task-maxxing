@@ -48,7 +48,7 @@ Out of scope: your personal fork of this repo (`YOUR-VAULT-tasks`), your n8n ins
 - **No secrets at rest in the repo.** Workflow JSONs use `{{PLACEHOLDER}}` tokens substituted at install time by `scripts/install-workflows.sh`. The rendered files go to `/tmp/`, are POSTed to n8n, then deleted.
 - **CI grep guards.** `.github/workflows/validate.yml` scans workflow JSONs on every push for hardcoded token shapes (`ghp_`, `ntn_`, `sk-`, `ApiKey ...`). A PR that accidentally bakes a secret into a committed JSON will fail CI.
 - **Bot-prefix echo guard.** Every automated commit carries a `[bot:daemon]` / `[bot:W1]` / `[bot:W2]` / `[bot:backfill]` prefix so W1's webhook handler can skip them and avoid an infinite ping-pong.
-- **Flip-ratio guard.** W1 refuses to proceed if a single run would flip >25% of your task state. This catches "I accidentally deleted TASKS-URGENT.md" before it replicates to Morgen.
+- **Flip-ratio guard.** W2 aborts a run (safety rail #28) if it would flip more than 50% of your tracked task state in a single pass, once at least 4 tasks are tracked. This catches a mass change on the Morgen side — e.g. a bulk delete or complete — before it cascades back into your Obsidian task files.
 
 ## Known Limitations
 
