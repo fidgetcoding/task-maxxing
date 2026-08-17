@@ -47,7 +47,7 @@ brew install node git gh jq
 
 Make sure the Tasks plugin is enabled, then create the folder and one sample file the sync needs.
 
-> **Don't put your vault under `~/Desktop`, `~/Documents`, or `~/Downloads`** — those are macOS permission-protected (TCC/Full-Disk-Access) and break terminal/git access for the daemon. A home-level path like `~/BRAIN2` works.
+> **Don't put your vault under `~/Desktop`, `~/Documents`, or `~/Downloads`** — those are macOS permission-protected (TCC/Full-Disk-Access) and break terminal/git access for the daemon. A home-level path like `~/MyVault` works.
 
 ```bash
 mkdir -p /path/to/your-vault/05-Tasks
