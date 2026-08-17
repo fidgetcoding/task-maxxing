@@ -86,69 +86,51 @@ function notionPriorityToInt(label) {
 }
 
 // ===========================================================================
-// Area mapping — LITERAL Notion select values with number prefix + U+00B7
+// Area mapping — derived from the user's area table (src/areas.js)
 // ===========================================================================
-// Introspected live from the upstream Notion tasks database. These exact
-// strings MUST be used when writing to Notion's Area select or the API
-// returns 400 (select options are matched by literal name, not ID).
-const NOTION_AREAS = Object.freeze({
-  URGENT: '01 URGENT',
-  GENERAL: '02 GENERAL',
-  LORECRAFT: '03 LORECRAFT',
-  BLOOM: '04 BLOOM',
-  'CART-BLANCHE': '05 CART-BLANCHE',
-  'FIDGETCODING-CONTENT': '06 FIDGETCODING · content',
-  'FIDGETCODING-MISC-BUILDING': '07 FIDGETCODING · misc-building',
-  'FUTURE-SCHEDULING': '08 FUTURE-SCHEDULING',
-  'LAVA-NETWORK': '09 LAVA-NETWORK',
-  MMA: '10 MMA',
-  PARZVL: '11 PARZVL',
-  WAGMI: '12 WAGMI',
-});
-// Reverse: Notion area label → internal area key
-const NOTION_AREA_TO_KEY = Object.freeze(
-  Object.fromEntries(Object.entries(NOTION_AREAS).map(([k, v]) => [v, k]))
-);
-// Area key → source file path (relative to repo root, which is also 05-Tasks dir)
-const AREA_TO_FILE = Object.freeze({
-  URGENT: 'TASKS-URGENT.md',
-  GENERAL: 'TASKS-GENERAL.md',
-  LORECRAFT: 'TASKS-LORECRAFT.md',
-  BLOOM: 'TASKS-BLOOM.md',
-  'CART-BLANCHE': 'TASKS-CART-BLANCHE.md',
-  'FIDGETCODING-CONTENT': 'FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
-  'FIDGETCODING-MISC-BUILDING': 'FIDGETCODING/misc-building/TASKS-FIDGETCODING-misc-building.md',
-  'FUTURE-SCHEDULING': 'FUTURE-SCHEDULING/TASKS-FUTURE-SCHEDULING.md',
-  'LAVA-NETWORK': 'TASKS-LAVA-NETWORK.md',
-  MMA: 'TASKS-MMA.md',
-  PARZVL: 'TASKS-PARZVL.md',
-  WAGMI: 'TASKS-WAGMI.md',
-});
+// These were literal tables of the author's own project names. They now come
+// from TASKMAXXING_AREAS so the pack ships no one's client roster and works for
+// any vault. The Notion select labels keep their number prefix (Notion matches
+// select options by literal name, so the exact string matters); Morgen tag
+// labels stay clean because Morgen's tag chips read better without one.
+//
+// Multi-value vs single-value: Notion Area is a single-select; Morgen tags are
+// multi-valued. We exploit the multi-value nature to add the URGENT tag as a
+// co-tag on high-priority tasks regardless of which file they live in —
+// something the single-value Notion Area could not express.
+const { getAreaConfig } = require('./areas.js');
 
 /**
- * parseArea(sourceFilePath) → internal area key (e.g. "FIDGETCODING-CONTENT")
+ * parseArea(sourceFilePath) → internal area key (e.g. "NESTED-CONTENT")
  *
- * Path-based detection. FIDGETCODING parent hub (TASKS-FIDGETCODING.md with no
+ * Path-based detection. FIDGETCODING parent hub (TASKS-NESTED.md with no
  * subfolder) is a query-only view and has no inline tasks in practice — if
- * encountered, we return FIDGETCODING-CONTENT as a safe fallback since tasks
+ * encountered, we return NESTED-CONTENT as a safe fallback since tasks
  * shouldn't land there.
  */
 function parseArea(sourceFilePath) {
+  const { areas, AREA_TO_FILE } = getAreaConfig();
   if (sourceFilePath == null) return 'GENERAL';
   const raw = String(sourceFilePath);
   if (!raw) return 'GENERAL';
   const p = raw.replace(/\\/g, '/').replace(/^\.\//, '').replace(/^05-Tasks\//, '');
 
-  // FIDGETCODING subareas (check before the parent hub)
-  if (/(^|\/)FIDGETCODING\/content\//.test(p)) return 'FIDGETCODING-CONTENT';
-  if (/(^|\/)FIDGETCODING\/misc-building\//.test(p)) return 'FIDGETCODING-MISC-BUILDING';
-  // Parent hub — query-only, but safe fallback
-  if (/(^|\/)FIDGETCODING\/TASKS-FIDGETCODING\.md$/.test(p)) return 'FIDGETCODING-CONTENT';
-
-  // FUTURE-SCHEDULING
-  if (/(^|\/)FUTURE-SCHEDULING\//.test(p)) return 'FUTURE-SCHEDULING';
-
-  // Flat TASKS-{AREA}.md
+  // 1. Exact configured file path, or one of its aliases
+  for (const a of areas) {
+    if (p === a.file || p.endsWith('/' + a.file)) return a.key;
+    for (const alias of a.aliasFiles || []) {
+      if (p === alias || p.endsWith('/' + alias)) return a.key;
+    }
+  }
+  // 2. Configured path prefix (longest first, so a nested prefix wins)
+  const prefixed = areas.filter((a) => a.pathPrefix)
+    .sort((a, b) => b.pathPrefix.length - a.pathPrefix.length);
+  for (const a of prefixed) {
+    if (p === a.pathPrefix || p.startsWith(a.pathPrefix) || p.includes('/' + a.pathPrefix)) {
+      return a.key;
+    }
+  }
+  // 3. Flat TASKS-{AREA}.md matching a configured key
   const seg = p.split('/').pop() || '';
   const m = seg.match(/^TASKS-([A-Za-z0-9][A-Za-z0-9_-]*)\.md$/i);
   if (m) {
@@ -160,15 +142,18 @@ function parseArea(sourceFilePath) {
 
 /** Internal area key → Notion select label */
 function areaKeyToNotionLabel(key) {
+  const { NOTION_AREAS } = getAreaConfig();
   return NOTION_AREAS[key] || NOTION_AREAS.GENERAL;
 }
 /** Notion select label → internal area key */
 function notionLabelToAreaKey(label) {
+  const { NOTION_AREA_TO_KEY } = getAreaConfig();
   if (label == null) return 'GENERAL';
   return NOTION_AREA_TO_KEY[label] || 'GENERAL';
 }
 /** Internal area key → relative source file path (no 05-Tasks/ prefix) */
 function areaKeyToFile(key) {
+  const { AREA_TO_FILE } = getAreaConfig();
   return AREA_TO_FILE[key] || AREA_TO_FILE.GENERAL;
 }
 
@@ -185,23 +170,11 @@ function areaKeyToFile(key) {
 // multi-valued. We exploit the multi-value nature to add `Urgent` as a co-tag
 // on high-priority tasks (🔺 priority=1 or ⏫ priority=2) regardless of which
 // file they live in — something the single-value Notion Area could not express.
-const MORGEN_AREAS = Object.freeze({
-  URGENT: 'Urgent',
-  GENERAL: 'General',
-  LORECRAFT: 'Lorecraft',
-  BLOOM: 'Bloom',
-  'CART-BLANCHE': 'Cart-Blanche',
-  'FIDGETCODING-CONTENT': 'Fidgetcoding-Content',
-  'FIDGETCODING-MISC-BUILDING': 'Fidgetcoding-Building',
-  'FUTURE-SCHEDULING': 'Future-Scheduling',
-  'LAVA-NETWORK': 'Lava-Network',
-  MMA: 'MMA',
-  PARZVL: 'Parzvl',
-  WAGMI: 'WAGMI',
-});
+// MORGEN_AREAS now comes from getAreaConfig() — see src/areas.js.
 
 /** Internal area key → Morgen tag label (clean, no number prefix) */
 function areaKeyToMorgenLabel(key) {
+  const { MORGEN_AREAS } = getAreaConfig();
   return MORGEN_AREAS[key] || MORGEN_AREAS.GENERAL;
 }
 
@@ -217,9 +190,11 @@ function areaKeyToMorgenLabel(key) {
  */
 function getDesiredMorgenTagLabels(task) {
   const labels = new Set();
+  const { MORGEN_AREAS } = getAreaConfig();
   labels.add(areaKeyToMorgenLabel(task && task.area));
   const p = task && task.priority;
-  if (p === 1 || p === 2) labels.add(MORGEN_AREAS.URGENT);
+  // && binds tighter than ||, so the URGENT guard needs its own parens.
+  if ((p === 1 || p === 2) && MORGEN_AREAS.URGENT) labels.add(MORGEN_AREAS.URGENT);
   return Array.from(labels).sort();
 }
 
@@ -242,7 +217,8 @@ function sameTagLabelSet(a, b) {
 // ===========================================================================
 // Path safety — allowlist check (Agent 8 S1 fix)
 // ===========================================================================
-const SAFE_PATH_RE = /^(TASKS-(URGENT|GENERAL|LORECRAFT|BLOOM|CART-BLANCHE|LAVA-NETWORK|MMA|PARZVL|WAGMI)\.md|FIDGETCODING\/(content|misc-building)\/TASKS-FIDGETCODING-(content|misc-building)\.md|FIDGETCODING\/TASKS-FIDGETCODING\.md|FUTURE-SCHEDULING\/TASKS-FUTURE-SCHEDULING\.md)$/;
+// Allowlist is derived from the configured area files (see src/areas.js), so it
+// can never drift out of step with the area table the way a hand-kept regex does.
 
 /**
  * isSafePath(p) — true if p is a known task-file path within the allowlist.
@@ -253,6 +229,7 @@ function isSafePath(p) {
   if (typeof p !== 'string') return false;
   if (p.includes('..') || p.includes('\\') || p.startsWith('/')) return false;
   // Accept with or without 05-Tasks/ prefix
+  const { SAFE_PATH_RE } = getAreaConfig();
   const normalized = p.replace(/^05-Tasks\//, '');
   return SAFE_PATH_RE.test(normalized);
 }
@@ -701,17 +678,18 @@ module.exports = {
   // Commit safety
   isBotCommitMessage,
   BOT_COMMIT_PREFIXES,
-  // Constants
+  // Constants. The area tables are getters so they always reflect the current
+  // TASKMAXXING_AREAS config rather than a value frozen at require() time.
   _constants: {
     PRIORITY_EMOJI_TO_INT,
     PRIORITY_INT_TO_EMOJI,
     PRIORITY_INT_TO_NOTION,
     PRIORITY_NOTION_TO_INT,
-    NOTION_AREAS,
-    NOTION_AREA_TO_KEY,
-    AREA_TO_FILE,
-    MORGEN_AREAS,
-    SAFE_PATH_RE,
+    get NOTION_AREAS() { return getAreaConfig().NOTION_AREAS; },
+    get NOTION_AREA_TO_KEY() { return getAreaConfig().NOTION_AREA_TO_KEY; },
+    get AREA_TO_FILE() { return getAreaConfig().AREA_TO_FILE; },
+    get MORGEN_AREAS() { return getAreaConfig().MORGEN_AREAS; },
+    get SAFE_PATH_RE() { return getAreaConfig().SAFE_PATH_RE; },
     SYNC_STATE_VERSION,
     TASK_LINE_RE,
     FENCE_RE,

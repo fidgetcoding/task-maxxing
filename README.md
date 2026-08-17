@@ -99,7 +99,7 @@ Bidirectional. Edit anywhere; it converges everywhere. Two sub-workflows, one or
                                     │
                        ┌────────────▼───────────┐
                        │  GitHub                │
-                       │  obsidian-tasks-sync   │
+                       │  the author's own private sync repo   │
                        └─▲────────────────────┬─┘
                          │                    │
                 W2 commits│                    │ W1 reads
@@ -250,6 +250,49 @@ task-maxxing/
 ```
 
 ---
+
+## Configuring your areas
+
+An "area" is one task file plus the Morgen tag and Notion label it maps to. The
+area table is **yours** — this repo ships only two generic areas (`URGENT`,
+`GENERAL`) and reads the rest from the `TASKMAXXING_AREAS` env var, a JSON array:
+
+```json
+[
+  { "key": "URGENT",  "file": "TASKS-URGENT.md",
+    "morgenLabel": "Urgent",  "notionLabel": "01 URGENT" },
+  { "key": "GENERAL", "file": "TASKS-GENERAL.md",
+    "morgenLabel": "General", "notionLabel": "02 GENERAL" },
+  { "key": "PROJECT-A", "file": "TASKS-PROJECT-A.md",
+    "morgenLabel": "Project-A", "notionLabel": "03 PROJECT-A" },
+  { "key": "NESTED", "file": "NESTED/content/TASKS-NESTED-content.md",
+    "morgenLabel": "Nested", "notionLabel": "04 NESTED",
+    "pathPrefix": "NESTED/content/",
+    "aliasFiles": ["NESTED/TASKS-NESTED.md"] }
+]
+```
+
+| Field | Required | Meaning |
+|---|---|---|
+| `key` | yes | Internal area key, uppercase. Also matched as `TASKS-<key>.md`. |
+| `file` | yes | Path relative to your tasks directory. |
+| `morgenLabel` | yes | Morgen tag label — no number prefix, the chips read better without one. |
+| `notionLabel` | yes | Notion select label — keep the number prefix, it drives sort order. |
+| `pathPrefix` | no | Any path under this prefix maps to this area. |
+| `aliasFiles` | no | Extra paths that resolve here and are safe to write, e.g. a query-only parent hub. |
+
+A `GENERAL` entry is required — it is the fallback for any path the table does
+not recognise.
+
+**Degradation is deliberate.** If the variable is unset, malformed, missing
+`GENERAL`, or contains a duplicate key or a traversal path, the whole config is
+rejected and the built-in defaults apply, with a warning on stderr saying which
+check failed. Everything then files under `GENERAL`. A half-applied area table
+would route tasks into the *wrong* project, which is worse than routing them all
+to one place.
+
+The write allowlist that guards against path traversal is generated from this
+table, so it can't drift out of step with it.
 
 ## Status
 

@@ -191,7 +191,7 @@ W1's only join key from markdown → Morgen is the `🆔 m-XXXXXXXX` token. If a
 
 ```bash
 cd "$VAULT_PATH/05-Tasks"
-git log -1 --pretty=format:"%s%n%b" -- TASKS-*.md FIDGETCODING/**/TASKS-*.md
+git log -1 --pretty=format:"%s%n%b" -- TASKS-*.md NESTED/**/TASKS-*.md
 ```
 
 Look at the commit subject. If it starts with **any `[bot:*]` prefix**, that's the problem — W1's echo guard skipped the run.
@@ -306,7 +306,7 @@ W1 only mints new IDs when a task line **lacks** the `🆔` token. The mint is t
 
 ### 10. Task lands in TASKS-GENERAL
 
-> You created a task that should have gone into a project area file (`TASKS-LORECRAFT.md`, `TASKS-WAGMI.md`, etc.) but it landed in `TASKS-GENERAL.md`.
+> You created a task that should have gone into a project area file (`TASKS-PROJECT-A.md`, `TASKS-PROJECT-G.md`, etc.) but it landed in `TASKS-GENERAL.md`.
 
 **Diagnose**
 

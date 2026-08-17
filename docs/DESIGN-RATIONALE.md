@@ -129,8 +129,8 @@ the response isn't paginated. `git log -S "ship the kit"
 05-Tasks/TASKS-URGENT.md` answers six months of "when did this task
 appear?" questions in one shell command.
 
-**Bulk edits are trivial.** Renaming a project from `LORECRAFT-HQ` to
-`LORECRAFT`? `sed -i` across the task files, commit, push, sync
+**Bulk edits are trivial.** Renaming a project from `PROJECT-A-HQ` to
+`PROJECT-A`? `sed -i` across the task files, commit, push, sync
 catches up. Doing the same against a SaaS API means writing a
 backfill script, dealing with pagination, and praying the rate limit
 holds. Text files are the cheapest schema-migration platform on
@@ -190,7 +190,7 @@ Three properties fall out for free:
   Obsidian doesn't surface anyway.
 - **Same text in two files = two tasks.** `sourceFile` is part of the
   hash input. Moving "ship the kit" from `TASKS-URGENT.md` to
-  `TASKS-LORECRAFT.md` reads as `archive + create`, which routes the
+  `TASKS-PROJECT-A.md` reads as `archive + create`, which routes the
   task into the right Morgen tag without any special-case logic.
 
 Completion state is **not** in the hash. Marking `- [ ]` → `- [x]`
@@ -237,7 +237,7 @@ matches `m-[0-9a-f]{8}` exactly. UUIDv4s embedded in 🆔 tokens (which
 predate this scheme) silently fail to parse — they're not picked up
 by W1, which means tasks created with them sit stranded in Obsidian
 without ever reaching Morgen. That failure mode bit hard once
-(LAVA-NET, May 2026, six invoice tasks stranded for hours) and is
+(PROJECT-D, May 2026, six invoice tasks stranded for hours) and is
 the reason `/maketasks` enforces the format.
 
 **What you'd give up to switch.** A client-minted UUIDv4 scheme would
@@ -500,7 +500,7 @@ W2 could surface pinned slots back into a markdown comment, but
 the storage shape ("pinned-at" emoji?) isn't decided.
 
 **Multi-area task moves.** Moving a task from `TASKS-URGENT.md` to
-`TASKS-LORECRAFT.md` reads as `archive + create` because
+`TASKS-PROJECT-A.md` reads as `archive + create` because
 `sourceFile` is in the hash. The new Morgen task gets a new ID;
 the user-visible `m-XXXXXXXX` token in the markdown line changes
 on rewrite. That's fine for now but means a task's history is
@@ -516,7 +516,7 @@ PagerDuty). Once the kit's user base picks a default, it'll get
 shipped as a fourth workflow.
 
 **Tag-scheme migration.** During the Notion era we ran two parallel
-Morgen tag schemes (`Lava-Network` bare-label vs `09 LAVA-NETWORK`
+Morgen tag schemes (`Project-D` bare-label vs `09 PROJECT-D`
 Notion-prefixed). The post-cutover state still uses the prefixed
 form because W2's `notionLabelToAreaKey` routes by it; switching
 to bare labels is a one-shot migration we haven't run. New forks

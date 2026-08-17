@@ -25,6 +25,7 @@
 
 'use strict';
 
+require('./test-areas.js'); // must precede sync-helpers
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -420,7 +421,7 @@ function simulateW3({ vaultDir, stateFile, notion, commit }) {
       // New row from Notion → append to source file
       // row.area is a Notion select label; convert to internal key to pick the right file
       const areaKey = notionLabelToAreaKey(row.area) === 'GENERAL' && row.area !== '02 GENERAL'
-        ? row.area // fall back to raw for tests using the flat form "LORECRAFT"
+        ? row.area // fall back to raw for tests using the flat form "PROJECT-A"
         : notionLabelToAreaKey(row.area);
       // Also tolerate tests that pass the raw internal key as `area`
       const keyGuess = Object.prototype.hasOwnProperty.call(helpers._constants.NOTION_AREAS, row.area)
@@ -670,11 +671,11 @@ async function testB_MorgenCompletionW2() {
 async function testC_NotionCreationW3() {
   const vault = makeTmpVault();
   try {
-    const sourceFile = 'TASKS-LORECRAFT.md';
+    const sourceFile = 'TASKS-PROJECT-A.md';
     writeTaskFile(
       vault,
       sourceFile,
-      ['# TASKS — LORECRAFT', '', '## Open', '', ''].join('\n')
+      ['# TASKS — PROJECT-A', '', '## Open', '', ''].join('\n')
     );
     const stateFile = path.join(vault, '.sync-state.json');
     saveStateFile(stateFile, loadSyncState(null));
@@ -684,7 +685,7 @@ async function testC_NotionCreationW3() {
         {
           pageId: 'notion-page-new-1',
           title: 'research Lava token model',
-          area: 'LORECRAFT', // W3 tolerates raw internal key when flat file exists
+          area: 'PROJECT-A', // W3 tolerates raw internal key when flat file exists
           priority: '⏫ High',
           status: 'Not Started',
           editedAtTs: Date.now(),
@@ -1014,7 +1015,7 @@ async function testJ_IsSafePath() {
     'TASKS-../x.md',
     '05-Tasks/../../etc/passwd',
     'TASKS-HACKED.md',               // not in allowlist
-    'FIDGETCODING/evil/TASKS-x.md',  // wrong subfolder
+    'NESTED/evil/TASKS-x.md',  // wrong subfolder
     '../TASKS-URGENT.md',
     '',
     null,
@@ -1027,20 +1028,20 @@ async function testJ_IsSafePath() {
   const accepts = [
     'TASKS-URGENT.md',
     'TASKS-GENERAL.md',
-    'TASKS-LORECRAFT.md',
-    'TASKS-BLOOM.md',
-    'TASKS-CART-BLANCHE.md',
-    'TASKS-LAVA-NETWORK.md',
-    'TASKS-MMA.md',
-    'TASKS-PARZVL.md',
-    'TASKS-WAGMI.md',
-    'FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
-    'FIDGETCODING/misc-building/TASKS-FIDGETCODING-misc-building.md',
-    'FIDGETCODING/TASKS-FIDGETCODING.md',
+    'TASKS-PROJECT-A.md',
+    'TASKS-PROJECT-B.md',
+    'TASKS-PROJECT-C.md',
+    'TASKS-PROJECT-D.md',
+    'TASKS-PROJECT-E.md',
+    'TASKS-PROJECT-F.md',
+    'TASKS-PROJECT-G.md',
+    'NESTED/content/TASKS-NESTED-content.md',
+    'NESTED/misc-building/TASKS-NESTED-misc-building.md',
+    'NESTED/TASKS-NESTED.md',
     'FUTURE-SCHEDULING/TASKS-FUTURE-SCHEDULING.md',
     // with 05-Tasks/ prefix also OK
     '05-Tasks/TASKS-URGENT.md',
-    '05-Tasks/FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
+    '05-Tasks/NESTED/content/TASKS-NESTED-content.md',
   ];
   for (const p of accepts) {
     assert.equal(isSafePath(p), true, `should accept: ${JSON.stringify(p)}`);
@@ -1051,34 +1052,34 @@ async function testK_ParseAreaRoundTrip() {
   const cases = [
     ['TASKS-URGENT.md', 'URGENT', '01 URGENT'],
     ['TASKS-GENERAL.md', 'GENERAL', '02 GENERAL'],
-    ['TASKS-LORECRAFT.md', 'LORECRAFT', '03 LORECRAFT'],
-    ['TASKS-BLOOM.md', 'BLOOM', '04 BLOOM'],
-    ['TASKS-CART-BLANCHE.md', 'CART-BLANCHE', '05 CART-BLANCHE'],
+    ['TASKS-PROJECT-A.md', 'PROJECT-A', '03 PROJECT-A'],
+    ['TASKS-PROJECT-B.md', 'PROJECT-B', '04 PROJECT-B'],
+    ['TASKS-PROJECT-C.md', 'PROJECT-C', '05 PROJECT-C'],
     [
-      'FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
-      'FIDGETCODING-CONTENT',
-      '06 FIDGETCODING · content',
+      'NESTED/content/TASKS-NESTED-content.md',
+      'NESTED-CONTENT',
+      '06 NESTED · content',
     ],
     [
-      'FIDGETCODING/misc-building/TASKS-FIDGETCODING-misc-building.md',
-      'FIDGETCODING-MISC-BUILDING',
-      '07 FIDGETCODING · misc-building',
+      'NESTED/misc-building/TASKS-NESTED-misc-building.md',
+      'NESTED-BUILD',
+      '07 NESTED · misc-building',
     ],
     [
       'FUTURE-SCHEDULING/TASKS-FUTURE-SCHEDULING.md',
       'FUTURE-SCHEDULING',
       '08 FUTURE-SCHEDULING',
     ],
-    ['TASKS-LAVA-NETWORK.md', 'LAVA-NETWORK', '09 LAVA-NETWORK'],
-    ['TASKS-MMA.md', 'MMA', '10 MMA'],
-    ['TASKS-PARZVL.md', 'PARZVL', '11 PARZVL'],
-    ['TASKS-WAGMI.md', 'WAGMI', '12 WAGMI'],
+    ['TASKS-PROJECT-D.md', 'PROJECT-D', '09 PROJECT-D'],
+    ['TASKS-PROJECT-E.md', 'PROJECT-E', '10 PROJECT-E'],
+    ['TASKS-PROJECT-F.md', 'PROJECT-F', '11 PROJECT-F'],
+    ['TASKS-PROJECT-G.md', 'PROJECT-G', '12 PROJECT-G'],
     // Also test with 05-Tasks/ prefix
     ['05-Tasks/TASKS-URGENT.md', 'URGENT', '01 URGENT'],
     [
-      '05-Tasks/FIDGETCODING/content/TASKS-FIDGETCODING-content.md',
-      'FIDGETCODING-CONTENT',
-      '06 FIDGETCODING · content',
+      '05-Tasks/NESTED/content/TASKS-NESTED-content.md',
+      'NESTED-CONTENT',
+      '06 NESTED · content',
     ],
   ];
   for (const [filePath, expectedKey, expectedLabel] of cases) {

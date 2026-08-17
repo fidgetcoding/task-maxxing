@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - README: tagline + workflow table + project tree updated 3-way → 2-way. A top-of-README NOTE banner explains the cutover.
 
 ### Why
-- Kit author's own instance (`obsidian-tasks-sync`) dropped Notion on the same date after the Notion bearer in W1+W3 was found to be silently 401-ing on every orchestrator tick. Morgen and Obsidian had become the only legs that mattered. The full investigation is in the kit author's vault under `05-Projects/LAVA-NET/invoices/2026-05-04-morgen-task-creation-and-sync-diagnosis.md` and the cutover memory at `project_notion_drop_2026_05_04.md`.
+- Kit author's own instance (`the author's own private sync repo`) dropped Notion on the same date after the Notion bearer in W1+W3 was found to be silently 401-ing on every orchestrator tick. Morgen and Obsidian had become the only legs that mattered. The full investigation is in the kit author's vault under `05-Projects/PROJECT-D/invoices/2026-05-04-morgen-task-creation-and-sync-diagnosis.md` and the cutover memory at `project_notion_drop_2026_05_04.md`.
 
 ### Added
 - README: social-links badge strip (X · LinkedIn · YouTube · Instagram, ruvnet-style for-the-badge) inserted into the centered header block beneath the project license badge.

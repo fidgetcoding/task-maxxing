@@ -10,12 +10,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node scripts/sync-e2e-tests.js",
+    "test": "node scripts/test-areas-config.js && node scripts/test-helpers.js && node scripts/sync-e2e-tests.js",
     "test:helpers": "node scripts/test-helpers.js",
     "validate:state": "node scripts/validate-sync-state.js",
     "validate:workflows": "node scripts/validate-workflows.js",
     "install:workflows": "./scripts/install-workflows.sh",
     "backfill:morgen": "node scripts/morgen-backfill.js",
-    "lint": "echo 'No linter configured yet'"
+    "lint": "echo 'No linter configured yet'",
+    "test:areas": "node scripts/test-areas-config.js"
   }
 }

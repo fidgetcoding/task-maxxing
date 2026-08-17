@@ -23,6 +23,7 @@
 
 'use strict';
 
+require('./test-areas.js'); // must precede sync-helpers
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -137,8 +138,8 @@ test('morgenPriorityToNotion: 0 (none) → null', () => {
 });
 
 // ---------- parseArea ----------
-test('parseArea: TASKS-LORECRAFT.md → LORECRAFT', () => {
-  assert.equal(helpers.parseArea('TASKS-LORECRAFT.md'), 'LORECRAFT');
+test('parseArea: TASKS-PROJECT-A.md → PROJECT-A', () => {
+  assert.equal(helpers.parseArea('TASKS-PROJECT-A.md'), 'PROJECT-A');
 });
 test('parseArea: TASKS-URGENT.md → URGENT', () => {
   assert.equal(helpers.parseArea('TASKS-URGENT.md'), 'URGENT');
@@ -165,8 +166,8 @@ test('areaKeyToFile: URGENT → TASKS-URGENT.md', () => {
 test('isSafePath: TASKS-URGENT.md is safe', () => {
   assert.equal(helpers.isSafePath('TASKS-URGENT.md'), true);
 });
-test('isSafePath: 05-Tasks/TASKS-LORECRAFT.md is safe (leading dir stripped)', () => {
-  assert.equal(helpers.isSafePath('05-Tasks/TASKS-LORECRAFT.md'), true);
+test('isSafePath: 05-Tasks/TASKS-PROJECT-A.md is safe (leading dir stripped)', () => {
+  assert.equal(helpers.isSafePath('05-Tasks/TASKS-PROJECT-A.md'), true);
 });
 test('isSafePath: traversal ../ is blocked', () => {
   assert.equal(helpers.isSafePath('../etc/passwd'), false);
@@ -196,7 +197,7 @@ test('computeTaskHash: different text → different hash', () => {
 });
 test('computeTaskHash: different sourceFile → different hash', () => {
   const a = helpers.computeTaskHash({ sourceFile: 'TASKS-URGENT.md', text: 'ship it', priority: 2 });
-  const b = helpers.computeTaskHash({ sourceFile: 'TASKS-LORECRAFT.md', text: 'ship it', priority: 2 });
+  const b = helpers.computeTaskHash({ sourceFile: 'TASKS-PROJECT-A.md', text: 'ship it', priority: 2 });
   assert.notEqual(a, b);
 });
 test('computeTaskHash: completion state is NOT in the hash', () => {

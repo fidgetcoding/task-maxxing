@@ -398,7 +398,7 @@ Two identifiers do different jobs:
 
 Hash format: SHA-256 of the canonical fields, `::`-joined, truncated to 24 hex chars. 96 bits of collision resistance is fine for any single-user task backlog and short enough to eyeball in logs.
 
-Why include `sourceFile` in the hash? So that the same text in `TASKS-URGENT.md` and `TASKS-LORECRAFT.md` counts as two distinct tasks. Why exclude line number? So you can re-order tasks within a file without churning state.
+Why include `sourceFile` in the hash? So that the same text in `TASKS-URGENT.md` and `TASKS-PROJECT-A.md` counts as two distinct tasks. Why exclude line number? So you can re-order tasks within a file without churning state.
 
 ---
 
